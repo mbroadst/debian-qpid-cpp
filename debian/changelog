@@ -1,3 +1,9 @@
+qpid-cpp (0.34-1trusty+qpid1) trusty; urgency=medium
+
+  * Rebased on qpid-cpp 0.34
+
+ -- Matt Broadstone <mbroadst@gmail.com>  Fri, 28 Aug 2015 10:15:59 -0400
+
 qpid-cpp (0.32-3qpid+trusty1) trusty; urgency=medium
 
   * Bumped the release and rebuilt for the new Qpid testing PPA.
@@ -13,7 +19,7 @@ qpid-cpp (0.32-2trusty+mcpierce1) trusty; urgency=low
 
 qpid-cpp (0.32-1trusty+mcpierce1) trusty; urgency=medium
 
-  * Rebased on Qpid 0.32. 
+  * Rebased on Qpid 0.32.
 
  -- Darryl L. Pierce <dpierce@redhat.com>  Mon, 27 Apr 2015 11:36:36 -0400
 
@@ -28,7 +34,7 @@ qpid-cpp (0.28-10trusty+mcpierce1) trusty; urgency=low
 
 qpid-cpp (0.28-9trusty+mcpierce1) trusty; urgency=low
 
-  * Store package still had issues with loading two modules at once. 
+  * Store package still had issues with loading two modules at once.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Wed, 22 Oct 2014 17:07:40 -0400
 
@@ -41,7 +47,7 @@ qpid-cpp (0.28-8trusty+mcpierce1) trusty; urgency=low
 
 qpid-cpp (0.28-7trusty+mcpierce6) trusty; urgency=medium
 
-  * Added /etc/sasl2/qpidd.conf to qpidd package. 
+  * Added /etc/sasl2/qpidd.conf to qpidd package.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Mon, 22 Sep 2014 14:14:21 -0400
 
@@ -102,7 +108,7 @@ qpid-cpp (0.28-4trusty+mcpierce1) trusty; urgency=low
 
 qpid-cpp (0.28-3trusty+mcpierce1) trusty; urgency=low
 
-  * Updated the list of build dependencies. 
+  * Updated the list of build dependencies.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Fri, 05 Sep 2014 16:04:29 -0400
 
@@ -175,7 +181,7 @@ qpid-cpp (0.16-7ubuntu2) saucy; urgency=low
 
 qpid-cpp (0.16-7ubuntu1) quantal; urgency=low
 
-  * Merge from Debian, remaining changes: 
+  * Merge from Debian, remaining changes:
     - Disable testsuite due to IPv6 failure see 1016778.
 
  -- Oussama Bounaim <o.bounaim@gmail.com>  Fri, 28 Sep 2012 09:22:53 +0100
@@ -291,18 +297,18 @@ qpid-cpp (0.12-2) unstable; urgency=low
   * Added accidently missing qpid-doc and python-qmfgen packages.
 
   [ Christian Perrier ]
-  * Debconf templates and debian/control reviewed by the debian-l10n-                                                                  
-    english team as part of the Smith review project. Closes: #645160                                                                  
-  * [Debconf translation updates]                                                                                                      
-  * Russian (Yuri Kozlov).  Closes: #647982                                                                                            
-  * Slovak (Slavko).  Closes: #648752                                                                                                  
-  * Spanish; (Francisco Javier Cuadrado).  Closes: #648884                                                                             
-  * French (Julien Patriarca).  Closes: #648920                                                                                        
-  * Dutch; (Jeroen Schot).  Closes: #649065                                                                                            
-  * Czech (Michal Simunek).  Closes: #649104                                                                                           
-  * Danish (Joe Hansen).  Closes: #649268                                                                                              
-  * Portuguese (Miguel Figueiredo).  Closes: #649295                                                                                   
-  * Swedish (Martin Bagge / brother).  Closes: #649452 
+  * Debconf templates and debian/control reviewed by the debian-l10n-
+    english team as part of the Smith review project. Closes: #645160
+  * [Debconf translation updates]
+  * Russian (Yuri Kozlov).  Closes: #647982
+  * Slovak (Slavko).  Closes: #648752
+  * Spanish; (Francisco Javier Cuadrado).  Closes: #648884
+  * French (Julien Patriarca).  Closes: #648920
+  * Dutch; (Jeroen Schot).  Closes: #649065
+  * Czech (Michal Simunek).  Closes: #649104
+  * Danish (Joe Hansen).  Closes: #649268
+  * Portuguese (Miguel Figueiredo).  Closes: #649295
+  * Swedish (Martin Bagge / brother).  Closes: #649452
 
  -- Cajus Pollmeier <cajus@debian.org>  Mon, 10 Oct 2011 16:25:38 +0200
 

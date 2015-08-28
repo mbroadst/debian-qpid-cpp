@@ -22,7 +22,7 @@ Build-Depends: debhelper (>= 9.0.0~),
                libibverbs-dev,
                swig,
                ruby,
-               libqpid-proton2-dev (>= 0.9~)
+               libqpid-proton3-dev (>= 0.9~)
 Standards-Version: 3.9.5
 Homepage: http://qpid.apache.org/
 Vcs-Browser: http://git.debian.org/?p=pkg-middleware/qpid-cpp.git
@@ -179,7 +179,7 @@ Description: Qpid messaging development transitional package
 Package: libqpidmessaging-dev
 Architecture: any
 Section: libdevel
-Depends: libqpidmessaging2 (= ${binary:Version}), 
+Depends: libqpidmessaging2 (= ${binary:Version}),
          libqpidtypes-dev (= ${binary:Version}),
          libqpidcommon-dev (= ${binary:Version}),
          ${misc:Depends}
