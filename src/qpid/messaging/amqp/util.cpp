@@ -7,9 +7,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -18,35 +18,26 @@
  * under the License.
  *
  */
-#include "qpid/framing/Endian.h"
+#include "util.h"
+#include <sstream>
 
 namespace qpid {
-namespace framing {
+namespace messaging {
+namespace amqp {
 
-Endian::Endian() : littleEndian(!testBigEndian()) {}
-
-bool Endian::testBigEndian()
+std::string get_error_string(pn_condition_t* error, const std::string& general, const std::string& delim)
 {
-    uint16_t a = 1;
-    uint16_t b;
-    uint8_t* p = (uint8_t*) &b;
-    p[0] = 0xFF & (a >> 8);
-    p[1] = 0xFF & (a);
-    return a == b;
-}
-
-uint8_t* Endian::convertIfRequired(uint8_t* const octets, int width)
-{
-    if (instance.littleEndian) {
-        for (int i = 0; i < (width/2); i++) {
-            uint8_t temp = octets[i];
-            octets[i] = octets[width - (1 + i)];
-            octets[width - (1 + i)] = temp;
-        }
+    std::string name;
+    std::stringstream text;
+    if (pn_condition_is_set(error)) {
+        name = pn_condition_get_name(error);
+        text << general << delim << name;
+        const char* desc = pn_condition_get_description(error);
+        if (desc) text << ": " << desc;
+    } else {
+        text << general;
     }
-    return octets;
+    return text.str();
 }
 
-const Endian Endian::instance;
-
-}} // namespace qpid::framing
+}}} // namespace qpid::messaging::amqp

@@ -1,5 +1,5 @@
-#ifndef QPID_NULLSASLCLIENT_H
-#define QPID_NULLSASLCLIENT_H
+#ifndef QPID_MESSAGING_AMQP_UTIL_H
+#define QPID_MESSAGING_AMQP_UTIL_H
 
 /*
  *
@@ -21,25 +21,16 @@
  * under the License.
  *
  */
-#include "Sasl.h"
-
+#include <string>
+extern "C" {
+#include <proton/engine.h>
+}
 namespace qpid {
+namespace messaging {
+namespace amqp {
 
-class NullSaslClient : public Sasl
-{
-  public:
-    NullSaslClient(const std::string& username, const std::string& password);
-    bool start(const std::string& mechanisms, std::string& response,
-                       const qpid::sys::SecuritySettings* externalSecuritySettings = 0);
-    std::string step(const std::string& challenge);
-    std::string getMechanism();
-    std::string getUserId();
-    std::auto_ptr<qpid::sys::SecurityLayer> getSecurityLayer(uint16_t maxFrameSize);
-  private:
-    const std::string username;
-    const std::string password;
-    std::string mechanism;
-};
-} // namespace qpid
+std::string get_error_string(pn_condition_t* error, const std::string& general, const std::string& delim = std::string(" with "));
 
-#endif  /*!QPID_NULLSASLCLIENT_H*/
+}}} // namespace qpid::messaging::amqp
+
+#endif  /*!QPID_MESSAGING_AMQP_UTIL_H*/
