@@ -297,6 +297,8 @@ void Queue::deliverTo(Message msg, TxBuffer* txn)
         if (txn) {
             TxOp::shared_ptr op(new TxPublish(msg, shared_from_this()));
             txn->enlist(op);
+            QPID_LOG(debug, "Message " << msg.getSequence() << " enqueue on " << name
+                     << " enlisted in " << txn);
         } else {
             if (enqueue(0, msg)) {
                 push(msg);
@@ -1134,6 +1136,8 @@ void Queue::abandoned(const Message& message)
 
 void Queue::destroyed()
 {
+    if (mgmtObject != 0)
+        mgmtObject->debugStats("destroying");
     unbind(broker->getExchanges());
     remove(0, 0, boost::bind(&Queue::abandoned, this, _1), REPLICATOR/*even acquired message are treated as abandoned*/, false);
     if (alternateExchange.get()) {
@@ -1157,6 +1161,7 @@ void Queue::destroyed()
         mgmtObject->resourceDestroy();
         if (brokerMgmtObject)
             brokerMgmtObject->dec_queueCount();
+        mgmtObject = _qmf::Queue::shared_ptr(); // dont print debugStats in Queue::~Queue
     }
 }
 

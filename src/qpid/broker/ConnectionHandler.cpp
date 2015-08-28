@@ -39,6 +39,7 @@
 #include "qpid/broker/AclModule.h"
 #include "qpid/amqp_0_10/Codecs.h"
 #include "qmf/org/apache/qpid/broker/EventClientConnectFail.h"
+#include "qpid/Version.h"
 
 using namespace qpid;
 using namespace qpid::broker;
@@ -51,8 +52,6 @@ namespace _qmf = qmf::org::apache::qpid::broker;
 
 namespace
 {
-const std::string ANONYMOUS = "ANONYMOUS";
-const std::string PLAIN     = "PLAIN";
 const std::string en_US     = "en_US";
 const std::string QPID_FED_LINK = "qpid.fed_link";
 const std::string QPID_FED_TAG  = "qpid.federation_tag";
@@ -120,7 +119,12 @@ ConnectionHandler::Handler::Handler(qpid::broker::amqp_0_10::Connection& c, bool
     if (serverMode) {
         FieldTable properties;
         Array mechanisms(0x95);
+        boost::shared_ptr<const System> sysInfo = connection.getBroker().getSystem();
 
+        properties.setString("product", qpid::product);
+        properties.setString("version", qpid::version);
+        properties.setString("platform", sysInfo->getOsName());
+        properties.setString("host", sysInfo->getNodeName());
         properties.setString(QPID_FED_TAG, connection.getBroker().getFederationTag());
 
         authenticator = SaslAuthenticator::createAuthenticator(c);
@@ -234,7 +238,7 @@ void ConnectionHandler::Handler::tuneOk(uint16_t /*channelmax*/,
 void ConnectionHandler::Handler::open(const string& /*virtualHost*/,
                                       const framing::Array& /*capabilities*/, bool /*insist*/)
 {
-    if (connection.getUserId().empty()) {
+    if (connection.getUserId().empty() && connection.getBroker().isAuthenticating()) {
         throw ConnectionForcedException("Not authenticated!");
     }
 

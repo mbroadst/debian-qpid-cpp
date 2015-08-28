@@ -674,6 +674,7 @@ acl deny all all
             s.acknowledge(msg, qm.Disposition(qm.REJECTED)) # Reject the message
             self.assertEqual("bar", altq.fetch(timeout=0).content)
             s.acknowledge()
+            s.sync()            # Make sure backups are caught-up.
             c.close()
 
         # Sanity check: alternate exchanges on original broker
@@ -682,17 +683,17 @@ acl deny all all
         # Altex is in use as an alternate exchange, we should get an exception
         self.assertRaises(Exception, a.delExchange, "altex")
         # Check backup that was connected during setup.
-        cluster[1].wait_status("ready")
-        cluster[1].wait_backup("ex")
-        cluster[1].wait_backup("q")
+        def wait(broker):
+            broker.wait_status("ready")
+            for a in ["q", "ex", "altq", "altex"]:
+                broker.wait_backup(a)
+        wait(cluster[1])
         cluster.bounce(0)
         verify(cluster[1])
 
         # Check a newly started backup.
         cluster.start()
-        cluster[2].wait_status("ready")
-        cluster[2].wait_backup("ex")
-        cluster[2].wait_backup("q")
+        wait(cluster[2])
         cluster.bounce(1)
         verify(cluster[2])
 
@@ -839,21 +840,6 @@ acl deny all all
         cluster.start()
         send_ttl_messages()
 
-    def test_stale_response(self):
-        """Check for race condition where a stale response is processed after an
-        event for the same queue/exchange """
-        cluster = HaCluster(self, 2)
-        s = cluster[0].connect().session()
-        s.sender("keep;{create:always}") # Leave this queue in place.
-        for i in xrange(100):
-            q = "deleteme%s"%(i)
-            cluster[0].agent.addQueue(q)
-            cluster[0].agent.delQueue(q)
-        # It is possible for the backup to attempt to subscribe after the queue
-        # is deleted. This is not an error, but is logged as an error on the primary.
-        # The backup does not log this as an error so we only check the backup log for errors.
-        cluster[1].assert_log_clean()
-
     def test_missed_recreate(self):
         """If a queue or exchange is destroyed and one with the same name re-created
         while a backup is disconnected, the backup should also delete/recreate
@@ -900,6 +886,7 @@ acl deny all all
         qs = ["q%s"%i for i in xrange(10)]
         a = cluster[0].agent
         a.addQueue("q")
+        cluster[1].wait_backup("q")
         cluster.kill(0)
         cluster[1].promote()
         cluster[1].wait_status("active")
@@ -1025,8 +1012,8 @@ class LongTests(HaBrokerTest):
              "--broker", brokers[0].host_port(),
              "--address", "q;{create:always}",
              "--messages=1000",
-             "--tx=10"
-             # TODO aconway 2014-02-21: can't use amqp1.0 for transactions yet
+             "--tx=10",
+             "--connection-options={protocol:%s}" % self.tx_protocol
              ])
         receiver = self.popen(
             ["qpid-receive",
@@ -1034,8 +1021,8 @@ class LongTests(HaBrokerTest):
              "--address", "q;{create:always}",
              "--messages=990",
              "--timeout=10",
-             "--tx=10"
-             # TODO aconway 2014-02-21: can't use amqp1.0 for transactions yet
+             "--tx=10",
+             "--connection-options={protocol:%s}" % self.tx_protocol
              ])
         self.assertEqual(sender.wait(), 0)
         self.assertEqual(receiver.wait(), 0)
@@ -1268,7 +1255,7 @@ class StoreTests(HaBrokerTest):
         """Verify that a backup erases queue data from store recovery before
         doing catch-up from the primary."""
         if self.check_skip(): return
-        cluster = HaCluster(self, 2, args=['--log-enable=trace+:ha', '--log-enable=trace+:Store'])
+        cluster = HaCluster(self, 2)
         sn = cluster[0].connect(heartbeat=HaBroker.heartbeat).session()
         s1 = sn.sender("q1;{create:always,node:{durable:true}}")
         for m in ["foo","bar"]: s1.send(qm.Message(m, durable=True))
@@ -1532,7 +1519,7 @@ class TransactionTests(HaBrokerTest):
             except qm.TransactionUnknown: pass
             for b in cluster: self.assert_tx_clean(b)
             try: tx.connection.close()
-            except TransactionUnknown: pass # Occasionally get exception on close.
+            except qm.TransactionUnknown: pass # Occasionally get exception on close.
         finally: l.restore()
 
     def test_tx_no_backups(self):
@@ -1622,17 +1609,20 @@ class TransactionTests(HaBrokerTest):
             import qpid_tests.broker_0_10
         except ImportError:
             raise Skipped("Tests not found")
-
         cluster = HaCluster(self, 3)
-        self.popen(["qpid-txtest", "-p%s"%cluster[0].port()]).assert_exit_ok()
+        if "QPID_PORT" in os.environ: del os.environ["QPID_PORT"]
+        self.popen(["qpid-txtest2", "--broker", cluster[0].host_port()]).assert_exit_ok()
+        print
         self.popen(["qpid-python-test",
                     "-m", "qpid_tests.broker_0_10",
+                    "-m", "qpid_tests.broker_1_0",
                     "-b", "localhost:%s"%(cluster[0].port()),
-                    "*.tx.*"]).assert_exit_ok()
+                    "*.tx.*"], stdout=None, stderr=None).assert_exit_ok()
 
 if __name__ == "__main__":
     qpid_ha_exec = os.getenv("QPID_HA_EXEC")
     if qpid_ha_exec and os.path.isfile(qpid_ha_exec):
+        BrokerTest.amqp_tx_warning()
         outdir = "ha_tests.tmp"
         shutil.rmtree(outdir, True)
         os.execvp("qpid-python-test",
