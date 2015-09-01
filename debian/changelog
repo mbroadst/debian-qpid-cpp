@@ -1,29 +1,29 @@
-qpid-cpp (0.34-1trusty+qpid1) trusty; urgency=medium
+qpid-cpp (0.34-1precise+qpid1) precise; urgency=medium
 
   * Rebased on qpid-cpp 0.34
 
- -- Matt Broadstone <mbroadst@gmail.com>  Fri, 28 Aug 2015 10:15:59 -0400
+ -- Matt Broadstone <mbroadst@gmail.com>  Tue, 01 Sep 2015 10:15:59 -0400
 
-qpid-cpp (0.32-3qpid+trusty1) trusty; urgency=medium
+qpid-cpp (0.32-3qpid+precise1) precise; urgency=medium
 
   * Bumped the release and rebuilt for the new Qpid testing PPA.
 
  -- Darryl L. Pierce <dpierce@redhat.com>  Thu, 11 Jun 2015 15:09:16 -0400
 
-qpid-cpp (0.32-2trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.32-2precise+mcpierce1) precise; urgency=low
 
   * Added /etc/sasl2/qpidd.conf to the qpidd package.
   * Added /etc/qpidd/qpidd.acl to the qpidd package.
 
  -- Darryl L. Pierce <dpierce@redhat.com>  Tue, 02 Jun 2015 13:43:58 -0400
 
-qpid-cpp (0.32-1trusty+mcpierce1) trusty; urgency=medium
+qpid-cpp (0.32-1precise+mcpierce1) precise; urgency=medium
 
   * Rebased on Qpid 0.32.
 
  -- Darryl L. Pierce <dpierce@redhat.com>  Mon, 27 Apr 2015 11:36:36 -0400
 
-qpid-cpp (0.28-10trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-10precise+mcpierce1) precise; urgency=low
 
   * Fixed numerous warnings that have cropped up in Ubuntu builds.
   * Added transitional development packages.
@@ -32,50 +32,50 @@ qpid-cpp (0.28-10trusty+mcpierce1) trusty; urgency=low
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Fri, 24 Oct 2014 07:55:48 -0400
 
-qpid-cpp (0.28-9trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-9precise+mcpierce1) precise; urgency=low
 
   * Store package still had issues with loading two modules at once.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Wed, 22 Oct 2014 17:07:40 -0400
 
-qpid-cpp (0.28-8trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-8precise+mcpierce1) precise; urgency=low
 
   * Fixed dependencies between development packages.
   * Added libdb dependency to ensure the legacy store is built.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Wed, 22 Oct 2014 09:53:32 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce6) trusty; urgency=medium
+qpid-cpp (0.28-7precise+mcpierce6) precise; urgency=medium
 
   * Added /etc/sasl2/qpidd.conf to qpidd package.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Mon, 22 Sep 2014 14:14:21 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce5) trusty; urgency=medium
+qpid-cpp (0.28-7precise+mcpierce5) precise; urgency=medium
 
   * Fixed the rules file to not compress the examples.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Wed, 17 Sep 2014 09:54:51 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce4) trusty; urgency=medium
+qpid-cpp (0.28-7precise+mcpierce4) precise; urgency=medium
 
   *  Added the python-qpid-messaging-examples package.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Tue, 16 Sep 2014 09:38:06 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce3) trusty; urgency=medium
+qpid-cpp (0.28-7precise+mcpierce3) precise; urgency=medium
 
   * Added swig dependency.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Tue, 16 Sep 2014 07:32:01 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce2) trusty; urgency=medium
+qpid-cpp (0.28-7precise+mcpierce2) precise; urgency=medium
 
   * Renamed python-qpidmessaging to python-qpid-messaging.
 
  -- Darryl Pierce <mcpierce@gmail.com>  Mon, 15 Sep 2014 16:06:01 -0400
 
-qpid-cpp (0.28-7trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-7precise+mcpierce1) precise; urgency=low
 
   * Restored the python-qmf2 package.
   * Restored the python-cqmf2 package.
@@ -86,19 +86,19 @@ qpid-cpp (0.28-7trusty+mcpierce1) trusty; urgency=low
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Thu, 11 Sep 2014 17:36:23 -0400
 
-qpid-cpp (0.28-6trusty+_mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-6precise+_mcpierce1) precise; urgency=low
 
   * Corrected the bug # for the new maintainer in changelog.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Wed, 10 Sep 2014 15:14:13 -0400
 
-qpid-cpp (0.28-5trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-5precise+mcpierce1) precise; urgency=low
 
   * Split qpid-tools into qpid-send and qpid-receive packages.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Tue, 09 Sep 2014 13:31:05 -0400
 
-qpid-cpp (0.28-4trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-4precise+mcpierce1) precise; urgency=low
 
   * Added missing amqp.so module.
   * Added qpid-tools package.
@@ -106,20 +106,20 @@ qpid-cpp (0.28-4trusty+mcpierce1) trusty; urgency=low
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Mon, 08 Sep 2014 07:26:46 -0400
 
-qpid-cpp (0.28-3trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-3precise+mcpierce1) precise; urgency=low
 
   * Updated the list of build dependencies.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Fri, 05 Sep 2014 16:04:29 -0400
 
-qpid-cpp (0.28-2trusty+mcpierce1) trusty; urgency=low
+qpid-cpp (0.28-2precise+mcpierce1) precise; urgency=low
 
   * Enable AMQP 1.0 support by requiring libqpid-proton2.
   * Fixed names of -dev packages to include soversion.
 
  -- Darryl L. Pierce <mcpierce@gmail.com>  Thu, 04 Sep 2014 09:50:35 -0400
 
-qpid-cpp (0.28-1trusty+mcpierce1) trusty; urgency=medium
+qpid-cpp (0.28-1precise+mcpierce1) precise; urgency=medium
 
   * New maintainer. (Closes: #757652)
   * Dropped the qpid-client package.
@@ -148,7 +148,7 @@ qpid-cpp (0.16-7.1) unstable; urgency=medium
 
  -- Dimitri John Ledkov <xnox@ubuntu.com>  Wed, 30 Apr 2014 00:07:42 +0100
 
-qpid-cpp (0.16-7ubuntu5) trusty; urgency=low
+qpid-cpp (0.16-7ubuntu5) precise; urgency=low
 
   * Rebuild for Perl 5.18.
 
