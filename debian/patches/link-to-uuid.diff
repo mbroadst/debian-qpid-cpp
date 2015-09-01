@@ -1,0 +1,13 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 8e2b5b7..b34451c 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -882,7 +882,7 @@ set_source_files_properties(
+ 
+ add_msvc_version (qpidtypes library dll)
+ add_library(qpidtypes SHARED ${qpidtypes_SOURCES})
+-target_link_libraries(qpidtypes "${uuid_LIB}")
++target_link_libraries(qpidtypes uuid)
+ set_target_properties (qpidtypes PROPERTIES
+                        LINK_FLAGS "${HIDE_SYMBOL_FLAGS} ${LINK_VERSION_SCRIPT_FLAG}"
+                        VERSION ${qpidtypes_version}
