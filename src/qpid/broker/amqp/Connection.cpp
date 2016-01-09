@@ -109,6 +109,7 @@ struct ConnectionTickerTask : public qpid::sys::TimerTask
         connection.requestIO();
     }
 };
+const std::string ANONYMOUS_RELAY("ANONYMOUS-RELAY");
 }
 
 Connection::Connection(qpid::sys::OutputControl& o, const std::string& i, BrokerContext& b, bool saslInUse, bool brokerInitiated)
@@ -209,7 +210,9 @@ size_t Connection::decode(const char* buffer, size_t size)
             pn_condition_set_description(error, e.what());
             close();
         }
-        pn_transport_tick(transport, qpid::sys::Duration::FromEpoch() / qpid::sys::TIME_MSEC);
+        // QPID-6698: don't use wallclock here, use monotonic clock
+        int64_t now = qpid::sys::Duration(qpid::sys::ZERO, qpid::sys::AbsTime::now());
+        pn_transport_tick(transport, now / int64_t(qpid::sys::TIME_MSEC));
         if (!haveOutput) {
             haveOutput = true;
             out.activateOutput();
@@ -234,6 +237,7 @@ size_t Connection::encode(char* buffer, size_t size)
     if (n > 0) {
         QPID_LOG_CAT(debug, network, id << " encoded " << n << " bytes from " << size)
         haveOutput = true;
+        if (ticker) ticker->restart();
         return n;
     } else if (n == PN_EOS) {
         haveOutput = false;
@@ -316,7 +320,9 @@ bool Connection::canEncode()
         QPID_LOG(info, "Connection " << id << " has been closed locally");
     }
     if (ioRequested.valueCompareAndSwap(true, false)) haveOutput = true;
-    pn_transport_tick(transport, qpid::sys::Duration::FromEpoch() / qpid::sys::TIME_MSEC);
+    // QPID-6698: don't use wallclock here, use monotonic clock
+    int64_t now = qpid::sys::Duration(qpid::sys::ZERO, qpid::sys::AbsTime::now());
+    pn_transport_tick(transport, (now / int64_t(qpid::sys::TIME_MSEC)));
     QPID_LOG_CAT(trace, network, id << " canEncode(): " << haveOutput)
     return haveOutput;
 }
@@ -346,6 +352,15 @@ void Connection::open()
                      << " remote=" << pn_transport_get_remote_idle_timeout(transport));
     }
 
+    pn_data_t* offered_capabilities = pn_connection_offered_capabilities(connection);
+    if (offered_capabilities) {
+        pn_data_put_array(offered_capabilities, false, PN_SYMBOL);
+        pn_data_enter(offered_capabilities);
+        pn_data_put_symbol(offered_capabilities, pn_bytes(ANONYMOUS_RELAY.size(), ANONYMOUS_RELAY.c_str()));
+        pn_data_exit(offered_capabilities);
+        pn_data_rewind(offered_capabilities);
+    }
+
     // QPID-6592: put self-identifying information into the connection
     // properties.  Use keys defined by the 0-10 spec, as AMQP 1.0 has yet to
     // define any.
@@ -353,8 +368,6 @@ void Connection::open()
     pn_data_t *props = pn_connection_properties(connection);
     if (props) {
         boost::shared_ptr<const System> sysInfo = getBroker().getSystem();
-        std::string osName(sysInfo->getOsName());
-        std::string nodeName(sysInfo->getNodeName());
 
         pn_data_clear(props);
         pn_data_put_map(props);
@@ -363,10 +376,14 @@ void Connection::open()
         pn_data_put_string(props, pn_bytes(qpid::product.size(), qpid::product.c_str()));
         pn_data_put_symbol(props, pn_bytes(7, "version"));
         pn_data_put_string(props, pn_bytes(qpid::version.size(), qpid::version.c_str()));
-        pn_data_put_symbol(props, pn_bytes(8, "platform"));
-        pn_data_put_string(props, pn_bytes(osName.size(), osName.c_str()));
-        pn_data_put_symbol(props, pn_bytes(4, "host"));
-        pn_data_put_string(props, pn_bytes(nodeName.size(), nodeName.c_str()));
+        if (sysInfo) {
+            std::string osName(sysInfo->getOsName());
+            std::string nodeName(sysInfo->getNodeName());
+            pn_data_put_symbol(props, pn_bytes(8, "platform"));
+            pn_data_put_string(props, pn_bytes(osName.size(), osName.c_str()));
+            pn_data_put_symbol(props, pn_bytes(4, "host"));
+            pn_data_put_string(props, pn_bytes(nodeName.size(), nodeName.c_str()));
+        }
         pn_data_exit(props);
         pn_data_rewind(props);
     }
@@ -631,6 +648,8 @@ void Connection::doLinkRemoteDetach(pn_link_t *link, bool closed)
 void Connection::doDeliveryUpdated(pn_delivery_t *delivery)
 {
     pn_link_t* link = pn_delivery_link(delivery);
+    if (pn_link_state(link) & PN_LOCAL_CLOSED) return;
+
     try {
         if (pn_link_is_receiver(link)) {
             Sessions::iterator i = sessions.find(pn_link_session(link));
