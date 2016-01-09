@@ -206,6 +206,19 @@ class IncomingToExchange : public DecodingIncoming
     bool isControllingLink;
 };
 
+class AnonymousRelay : public DecodingIncoming
+{
+  public:
+    AnonymousRelay(Broker& b, Connection& c, Session& p, pn_link_t* l)
+        : DecodingIncoming(l, b, p, std::string(), "ANONYMOUS-RELAY", pn_link_name(l)), authorise(p.getAuthorise()), context(c)
+    {}
+    void handle(qpid::broker::Message& m, qpid::broker::TxBuffer*);
+  private:
+    boost::shared_ptr<qpid::broker::Exchange> exchange;
+    Authorise& authorise;
+    BrokerContext& context;
+};
+
 class IncomingToCoordinator : public DecodingIncoming
 {
   public:
@@ -217,6 +230,11 @@ class IncomingToCoordinator : public DecodingIncoming
     void handle(qpid::broker::Message&, qpid::broker::TxBuffer*) {}
   private:
 };
+
+bool Session::ResolvedNode::trackControllingLink() const
+{
+    return created && (properties.trackControllingLink() || (queue && queue->getSettings().lifetime == QueueSettings::DELETE_ON_CLOSE));
+}
 
 Session::Session(pn_session_t* s, Connection& c, qpid::sys::OutputControl& o)
     : ManagedSession(c.getBroker(), c, (boost::format("%1%") % s).str()), session(s), connection(c), out(o), deleted(false),
@@ -293,6 +311,7 @@ Session::ResolvedNode Session::resolve(const std::string name, pn_terminus_t* te
                 std::pair<boost::shared_ptr<Queue>, boost::shared_ptr<Topic> > result = nodePolicy->create(name, connection);
                 node.queue = result.first;
                 node.topic = result.second;
+                node.created = node.queue || node.topic;
                 if (node.topic) node.exchange = node.topic->getExchange();
 
                 if (node.queue) {
@@ -421,6 +440,14 @@ void Session::attach(pn_link_t* link)
             name = generateName(link);
             QPID_LOG(debug, "Received attach request for incoming link to " << name);
             pn_terminus_set_address(pn_link_target(link), qualifyName(name).c_str());
+        } else if (pn_terminus_get_type(target) == PN_TARGET && !pn_terminus_get_address(target)) {
+            authorise.access("ANONYMOUS-RELAY");
+            boost::shared_ptr<Incoming> r(new AnonymousRelay(connection.getBroker(), connection, *this, link));
+            incoming[link] = r;
+            if (connection.getBroker().isAuthenticating() && !connection.isLink())
+                r->verify(connection.getUserId(), connection.getBroker().getRealm());
+            QPID_LOG(debug, "Incoming link attached for ANONYMOUS-RELAY");
+            return;
         } else {
             name  = pn_terminus_get_address(target);
             QPID_LOG(debug, "Received attach request for incoming link to " << name);
@@ -459,10 +486,10 @@ void Session::setupIncoming(pn_link_t* link, pn_terminus_t* target, const std::s
         source = sourceAddress;
     }
     if (node.queue) {
-        boost::shared_ptr<Incoming> q(new IncomingToQueue(connection.getBroker(), *this, node.queue, link, source, node.created && node.properties.trackControllingLink()));
+        boost::shared_ptr<Incoming> q(new IncomingToQueue(connection.getBroker(), *this, node.queue, link, source, node.trackControllingLink()));
         incoming[link] = q;
     } else if (node.exchange) {
-        boost::shared_ptr<Incoming> e(new IncomingToExchange(connection.getBroker(), *this, node.exchange, link, source, node.created && node.properties.trackControllingLink()));
+        boost::shared_ptr<Incoming> e(new IncomingToExchange(connection.getBroker(), *this, node.exchange, link, source, node.trackControllingLink()));
         incoming[link] = e;
     } else if (node.relay) {
         boost::shared_ptr<Incoming> in(new IncomingToRelay(link, connection.getBroker(), *this, source, name, pn_link_name(link), node.relay));
@@ -504,7 +531,7 @@ void Session::setupOutgoing(pn_link_t* link, pn_terminus_t* source, const std::s
         if (type == CONSUMER && node.queue->hasExclusiveOwner() && !node.queue->isExclusiveOwner(this)) {
             throw Exception(qpid::amqp::error_conditions::PRECONDITION_FAILED, std::string("Cannot consume from exclusive queue ") + node.queue->getName());
         }
-        boost::shared_ptr<Outgoing> q(new OutgoingFromQueue(connection.getBroker(), name, target, node.queue, link, *this, out, type, false, node.created && node.properties.trackControllingLink()));
+        boost::shared_ptr<Outgoing> q(new OutgoingFromQueue(connection.getBroker(), name, target, node.queue, link, *this, out, type, false, node.trackControllingLink()));
         q->init();
         filter.apply(q);
         outgoing[link] = q;
@@ -607,6 +634,7 @@ void Session::detach(pn_link_t* link, bool closed)
     } else {
         IncomingLinks::iterator i = incoming.find(link);
         if (i != incoming.end()) {
+            abort_pending(link);
             i->second->detached(closed);
             incoming.erase(i);
             QPID_LOG(debug, "Incoming link detached");
@@ -614,17 +642,51 @@ void Session::detach(pn_link_t* link, bool closed)
     }
 }
 
+void Session::pending_accept(pn_delivery_t* delivery)
+{
+    qpid::sys::Mutex::ScopedLock l(lock);
+    pending.insert(delivery);
+}
+
+bool Session::clear_pending(pn_delivery_t* delivery)
+{
+    qpid::sys::Mutex::ScopedLock l(lock);
+    std::set<pn_delivery_t*>::iterator i = pending.find(delivery);
+    if (i != pending.end()) {
+        pending.erase(i);
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void Session::abort_pending(pn_link_t* link)
+{
+    qpid::sys::Mutex::ScopedLock l(lock);
+    for (std::set<pn_delivery_t*>::iterator i = pending.begin(); i != pending.end();) {
+        if (pn_delivery_link(*i) == link) {
+            pn_delivery_settle(*i);
+            pending.erase(i++);
+        } else {
+            ++i;
+        }
+    }
+}
+
 void Session::accepted(pn_delivery_t* delivery, bool sync)
 {
     if (sync) {
-        //this is on IO thread
-        pn_delivery_update(delivery, PN_ACCEPTED);
-        pn_delivery_settle(delivery);//do we need to check settlement modes/orders?
-        incomingMessageAccepted();
+        if (clear_pending(delivery))
+        {
+            //this is on IO thread
+            pn_delivery_update(delivery, PN_ACCEPTED);
+            pn_delivery_settle(delivery);//do we need to check settlement modes/orders?
+            incomingMessageAccepted();
+        }
     } else {
         //this is not on IO thread, need to delay processing until on IO thread
         qpid::sys::Mutex::ScopedLock l(lock);
-        if (!deleted) {
+        if (!deleted && pending.find(delivery) != pending.end()) {
             completed.push_back(delivery);
             out.activateOutput();
         }
@@ -902,6 +964,43 @@ void IncomingToExchange::handle(qpid::broker::Message& message, qpid::broker::Tx
     }
 }
 
+void AnonymousRelay::handle(qpid::broker::Message& message, qpid::broker::TxBuffer* transaction)
+{
+    // need to retrieve AMQP 1.0 'to' field and resolve it to a queue or exchange
+    std::string dest = message.getTo();
+    authorise.access(dest, false, false);
+    QPID_LOG(debug, "AnonymousRelay received message for " << dest);
+    boost::shared_ptr<qpid::broker::Exchange> exchange;
+    boost::shared_ptr<qpid::broker::Queue> queue;
+    boost::shared_ptr<qpid::broker::amqp::Topic> topic;
+
+    queue = context.getBroker().getQueues().find(dest);
+    if (!queue) {
+        topic = context.getTopics().get(dest);
+        if (topic) {
+            exchange = topic->getExchange();
+        } else {
+            exchange = context.getBroker().getExchanges().find(dest);
+        }
+    }
+
+    try {
+        if (queue) {
+            authorise.incoming(queue);
+            queue->deliver(message, transaction);
+        } else if (exchange) {
+            authorise.route(exchange, message);
+            DeliverableMessage deliverable(message, transaction);
+            exchange->route(deliverable);
+        } else {
+            QPID_LOG(info, "AnonymousRelay dropping message for " << dest);
+        }
+    } catch (const qpid::SessionException& e) {
+        throw Exception(qpid::amqp::error_conditions::PRECONDITION_FAILED, e.what());
+    }
+
+}
+
 void IncomingToCoordinator::deliver(boost::intrusive_ptr<qpid::broker::amqp::Message> message, pn_delivery_t* delivery)
 {
     if (message && message->isTypedBody()) {
@@ -926,6 +1025,7 @@ void IncomingToCoordinator::deliver(boost::intrusive_ptr<qpid::broker::amqp::Mes
                 if (i != args.end()) {
                     std::string id = *i;
                     bool failed = ++i != args.end() ? i->asBool() : false;
+                    session.pending_accept(delivery);
                     session.discharge(id, failed, delivery);
                 }
 
