@@ -17,50 +17,54 @@
 # under the License.
 #
 
-# Set default build type. Must come before project() which sets default to ""
-set (CMAKE_BUILD_TYPE RelWithDebInfo CACHE string
-  "Build type: Debug, Release, RelWithDebInfo or MinSizeRel (default RelWithDebInfo)")
-if (CMAKE_BUILD_TYPE MATCHES "Deb")
-  set (has_debug_symbols " (has debug symbols)")
-endif (CMAKE_BUILD_TYPE MATCHES "Deb")
-
 project(qpid-cpp)
 
-cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
-if(COMMAND cmake_policy)
-  cmake_policy(VERSION 2.6)
-endif(COMMAND cmake_policy)
+cmake_minimum_required(VERSION 2.8.7 FATAL_ERROR)
 
-if (${CMAKE_VERSION} VERSION_LESS "2.8.0")
-    set (OPTIONAL_ARG "")
-else()
-    set (OPTIONAL_ARG OPTIONAL)
-endif()
+if (CMAKE_CONFIGURATION_TYPES)
+  # There is no single "build type"...
+  message(STATUS "Build types are ${CMAKE_CONFIGURATION_TYPES}")
+else (CMAKE_CONFIGURATION_TYPES)
+  # There is a single build configuration
+  # If the build type is not set then set the default
+  if (NOT CMAKE_BUILD_TYPE)
+  set (CMAKE_BUILD_TYPE RelWithDebInfo CACHE string
+       "Build type: Debug, Release, RelWithDebInfo or MinSizeRel (default RelWithDebInfo)" FORCE)
+  endif ()
+
+  if (CMAKE_BUILD_TYPE MATCHES "Deb")
+    set (has_debug_symbols " (has debug symbols)")
+  endif (CMAKE_BUILD_TYPE MATCHES "Deb")
+  message(STATUS "Build type is \"${CMAKE_BUILD_TYPE}\"${has_debug_symbols}")
+endif (CMAKE_CONFIGURATION_TYPES)
 
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/CMakeModules)
 
-# Parse the version from QPID_VERSION.txt.
-# Use the top level qpid/ file if we're in an SVN checkout, source dir otherwise.
-find_file(QPID_VERSION_FILE NAMES QPID_VERSION.txt PATHS ${PROJECT_SOURCE_DIR}/.. ${PROJECT_SOURCE_DIR} NO_DEFAULT_PATH)
-mark_as_advanced(QPID_VERSION_FILE)
-if(NOT QPID_VERSION_FILE)
-  message(FATAL_ERROR "Cannot find QPID_VERSION.txt")
-endif(NOT QPID_VERSION_FILE)
+file(READ VERSION.txt QPID_VERSION)
+string(STRIP ${QPID_VERSION} QPID_VERSION_LINE)
+string(REPLACE "-" ";" QPID_VERSION_SPLIT "${QPID_VERSION_LINE}")
+list(GET QPID_VERSION_SPLIT 0 QPID_VERSION_CLEAN)
+list(REMOVE_AT QPID_VERSION_SPLIT 0)
+string(REPLACE ";" "-" QPID_VERSION_QUALIFIER "${QPID_VERSION_SPLIT}")
+string(REGEX MATCHALL "[0-9]+" QPID_VERSION_LIST "${QPID_VERSION_CLEAN}")
 
-file(READ ${QPID_VERSION_FILE} QPID_VERSION)
-string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\n" "\\1" QPID_VERSION_MAJOR "${QPID_VERSION}")
-string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\n" "\\2" QPID_VERSION_MINOR "${QPID_VERSION}")
-set (QPID_VERSION_FULL "${QPID_VERSION_MAJOR}.${QPID_VERSION_MINOR}")
+list(GET QPID_VERSION_LIST 0 QPID_VERSION_MAJOR)
+list(GET QPID_VERSION_LIST 1 QPID_VERSION_MINOR)
+list(GET QPID_VERSION_LIST 2 QPID_VERSION_POINT)
 
-set (qpidc_version ${QPID_VERSION_FULL})
+set(QPID_VERSION_FULL "${QPID_VERSION_MAJOR}.${QPID_VERSION_MINOR}.${QPID_VERSION_POINT}")
+set(qpidc_version ${QPID_VERSION_FULL})
 
 include(BuildInstallSettings.cmake)
 
+find_package(PythonInterp REQUIRED)
+
 enable_testing()
 include (CTest)
+configure_file(${CMAKE_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR}/CTestCustom.cmake)
 
 if (MSVC)
-  # Change warning C4996 from level 1 to level 4. These are real and shouldn't
+  # Chaxnge warning C4996 from level 1 to level 4. These are real and shouldn't
   # be completely ignored, but they're pretty well checked out and will throw
   # a run-time error if violated.
   # "warning C4996: 'std::equal': Function call with parameters that may
@@ -70,7 +74,7 @@ endif (MSVC)
 
 # Overall packaging/install options.
 # This section also has all the setup for various packaging-specific options.
-set (CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set (CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
 if (WIN32)
   # Include installing the MSVCRT library
   set (CMAKE_INSTALL_DEBUG_LIBRARIES ON)
@@ -87,7 +91,7 @@ endif (WIN32)
 set_absolute_install_path (QPIDC_CONF_FILE ${QPID_INSTALL_CONFDIR}/qpidc.conf)
 set_absolute_install_path (QPIDD_CONF_FILE ${QPID_INSTALL_CONFDIR}/qpidd.conf)
 
-install(FILES  LICENSE NOTICE  DESTINATION ${QPID_INSTALL_DOCDIR})
+install(FILES  LICENSE.txt NOTICE.txt DESTINATION ${QPID_INSTALL_DOCDIR})
 install(FILES  include/qmf/qmf2.i
         DESTINATION ${QPID_INSTALL_INCLUDEDIR}/qmf)
 
@@ -107,13 +111,7 @@ set(CPACK_PACKAGE_VERSION_PATCH "0")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "qpidc-${qpidc_version}")
 
 # Add custom target for docs since we don't include a cmake file there directly.
-# If we can't use OPTIONAL in the install command then we have to make the docs
-# every time so that the install target succeeds
-if (OPTIONAL_ARG)
-  add_custom_target(docs)
-else (OPTIONAL_ARG)
-  add_custom_target(docs ALL)
-endif (OPTIONAL_ARG)
+add_custom_target(docs)
 
 # uninstall target
 configure_file(
@@ -144,7 +142,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL GNU)
    # -Wunreachable-code -Wpadded -Winline
    # -Wshadow - warns about boost headers.
    set (WARNING_FLAGS
-        "-Werror -pedantic -Wall -Wextra -Wno-shadow -Wpointer-arith -Wcast-qual -Wcast-align -Wno-long-long -Wvolatile-register-var -Winvalid-pch -Wno-system-headers -Woverloaded-virtual")
+        "-Werror -pedantic -Wall -Wextra -Wno-shadow -Wpointer-arith -Wcast-qual -Wcast-align -Wno-long-long -Wvolatile-register-var -Winvalid-pch -Wno-system-headers -Woverloaded-virtual -Wno-error=deprecated-declarations")
 
    set (CATCH_UNDEFINED "-Wl,--no-undefined")
    # gcc on SunOS uses native linker whose "-z defs" is too fussy
@@ -230,6 +228,7 @@ if (MSVC)
 endif (MSVC)
 
 # Subdirectories
+add_subdirectory(management/python)
 add_subdirectory(managementgen)
 add_subdirectory(src)
 add_subdirectory(etc)
@@ -239,7 +238,3 @@ add_subdirectory(docs/man)
 add_subdirectory(examples)
 
 include (CPack)
-
-# Build type message again, last so it is visible at end of output.
-message(STATUS "Build type is \"${CMAKE_BUILD_TYPE}\"${has_debug_symbols}")
-

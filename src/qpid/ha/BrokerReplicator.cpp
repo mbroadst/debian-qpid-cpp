@@ -21,7 +21,6 @@
 #include "BrokerReplicator.h"
 #include "HaBroker.h"
 #include "QueueReplicator.h"
-#include "TxReplicator.h"
 #include "qpid/broker/Broker.h"
 #include "qpid/broker/amqp_0_10/Connection.h"
 #include "qpid/broker/Queue.h"
@@ -215,16 +214,10 @@ class BrokerReplicator::UpdateTracker {
                   const LogPrefix& lp)
         : type(type_), cleanFn(f), logPrefix(lp) {}
 
-    /** Destructor cleans up remaining initial queues. */
-    ~UpdateTracker() {
-        // Don't throw in a destructor.
-        try {
-            for_each(initial.begin(), initial.end(),
-                     boost::bind(&UpdateTracker::clean, this, _1));
-        }
-        catch (const std::exception& e) {
-            QPID_LOG(error, logPrefix << "Error in cleanup of lost objects: " << e.what());
-        }
+    /** Clean up remaining initial queues. */
+    void done() {
+        for_each(initial.begin(), initial.end(),
+                 boost::bind(&UpdateTracker::clean, this, _1));
     }
 
     /** Add an exchange name */
@@ -472,16 +465,17 @@ void BrokerReplicator::route(Deliverable& msg) {
             }
             if (MessageTransfer::isLastQMFResponse(msg.getMessage(), EXCHANGE)) {
                 QPID_LOG(debug, logPrefix << "All exchange responses received.")
-                exchangeTracker.reset(); // Clean up exchanges that no longer exist in the primary
+                exchangeTracker->done(); // Clean up exchanges that no longer exist in the primary
+                exchangeTracker.reset();
                 alternates.clear();
             }
             if (MessageTransfer::isLastQMFResponse(msg.getMessage(), QUEUE)) {
                 QPID_LOG(debug, logPrefix << "All queue responses received.");
-                queueTracker.reset(); // Clean up queues that no longer exist in the primary
+                queueTracker->done(); // Clean up queues that no longer exist in the primary
+                queueTracker.reset();
             }
         }
     } catch (const std::exception& e) {
-;
         haBroker.shutdown(
             QPID_MSG(logPrefix << "Configuration replication failed: "
                      << e.what() << ": while handling: " << list));
@@ -772,10 +766,7 @@ boost::shared_ptr<QueueReplicator> BrokerReplicator::startQueueReplicator(
     const boost::shared_ptr<Queue>& queue)
 {
     if (replicationTest.getLevel(*queue) == ALL) {
-        if (TxReplicator::isTxQueue(queue->getName())) 
-            return TxReplicator::create(haBroker, queue, link);
-        else
-            return QueueReplicator::create(haBroker, queue, link);
+        return QueueReplicator::create(haBroker, queue, link);
     }
     return boost::shared_ptr<QueueReplicator>();
 }
@@ -886,10 +877,6 @@ void BrokerReplicator::disconnectedQueueReplicator(
     const boost::shared_ptr<QueueReplicator>& qr)
 {
     qr->disconnect();
-    if (TxReplicator::isTxQueue(qr->getQueue()->getName())) {
-        // Transactions are aborted on failover so clean up tx-queues
-        deleteQueue(qr->getQueue()->getName());
-    }
 }
 
 // Called by ConnectionObserver::disconnected, disconnected from the network side.

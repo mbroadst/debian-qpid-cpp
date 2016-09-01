@@ -1490,6 +1490,169 @@ QPID_AUTO_TEST_CASE(testImmediateNextReceiverNoMessage)
     }
 }
 
+QPID_AUTO_TEST_CASE(testResendEmpty)
+{
+    QueueFixture fix;
+    Sender sender = fix.session.createSender(fix.queue);
+    Message out("test-message");
+    sender.send(out);
+    Receiver receiver = fix.session.createReceiver(fix.queue);
+    Message in = receiver.fetch(Duration::SECOND * 5);
+    fix.session.acknowledge();
+    BOOST_CHECK_EQUAL(in.getContent(), out.getContent());
+    //set content on received message to empty string and resend
+    in.setContent("");
+    sender.send(in);
+    in = receiver.fetch(Duration::SECOND * 5);
+    fix.session.acknowledge();
+    BOOST_CHECK_EQUAL(in.getContent(), std::string());
+}
+
+QPID_AUTO_TEST_CASE(testResendMapAsString)
+{
+    QueueFixture fix;
+    Sender sender = fix.session.createSender(fix.queue);
+    Message out;
+    qpid::types::Variant::Map content;
+    content["foo"] = "bar";
+    encode(content, out);
+    sender.send(out);
+
+    Receiver receiver = fix.session.createReceiver(fix.queue);
+    Message in = receiver.fetch(Duration::SECOND * 5);
+    fix.session.acknowledge();
+    BOOST_CHECK_EQUAL(in.getContent(), out.getContent());
+    //change content and resend
+    std::string newContent("something random");
+    in.setContent(newContent);
+    in.setContentType(std::string());//it is no longer a map
+    sender.send(in);
+    in = receiver.fetch(Duration::SECOND * 5);
+    fix.session.acknowledge();
+    BOOST_CHECK_EQUAL(in.getContent(), newContent);
+}
+
+QPID_AUTO_TEST_CASE(testClientExpiration)
+{
+    QueueFixture fix;
+    Receiver receiver = fix.session.createReceiver(fix.queue);
+    receiver.setCapacity(5);
+    Sender sender = fix.session.createSender(fix.queue);
+    for (uint i = 0; i < 5000; ++i) {
+        Message msg((boost::format("a_%1%") % (i+1)).str());
+	msg.setSubject("a");
+	msg.setTtl(Duration(10));
+        sender.send(msg);
+    }
+    for (uint i = 0; i < 50; ++i) {
+        Message msg((boost::format("b_%1%") % (i+1)).str());
+	msg.setSubject("b");
+        sender.send(msg);
+    }
+    Message received;
+    bool done = false;
+    uint b_count = 0;
+    while (!done && receiver.fetch(received, Duration::IMMEDIATE)) {
+        if (received.getSubject() == "b") {
+            b_count++;
+        }
+        done = received.getContent() == "b_50";
+        fix.session.acknowledge();
+    }
+    BOOST_CHECK_EQUAL(b_count, 50u);
+}
+
+QPID_AUTO_TEST_CASE(testClientExpirationNoPrefetch)
+{
+    QueueFixture fix;
+    Receiver receiver = fix.session.createReceiver(fix.queue);
+    receiver.setCapacity(0);
+    Sender sender = fix.session.createSender(fix.queue);
+    for (uint i = 0; i < 50000; ++i) {
+        Message msg((boost::format("a_%1%") % (i+1)).str());
+	msg.setSubject("a");
+	msg.setTtl(Duration(15));
+        sender.send(msg);
+    }
+    for (uint i = 0; i < 50; ++i) {
+        Message msg((boost::format("b_%1%") % (i+1)).str());
+	msg.setSubject("b");
+        sender.send(msg);
+    }
+    Message received;
+    bool done = false;
+    uint b_count = 0;
+    while (!done && receiver.fetch(received, Duration::FOREVER)) {
+        if (received.getSubject() == "b") {
+            b_count++;
+        }
+        done = received.getContent() == "b_50";
+        fix.session.acknowledge();
+    }
+    BOOST_CHECK_EQUAL(b_count, 50u);
+}
+
+QPID_AUTO_TEST_CASE(testExpiredPrefetchOnClose)
+{
+    QueueFixture fix;
+    Receiver receiver = fix.session.createReceiver(fix.queue);
+    Session other = fix.connection.createSession();
+    Receiver receiver2 = other.createReceiver("amq.fanout");
+    receiver.setCapacity(500);
+    Sender sender = fix.session.createSender(fix.queue);
+    for (uint i = 0; i < 500; ++i) {
+        Message msg((boost::format("a_%1%") % (i+1)).str());
+	msg.setSubject("a");
+	msg.setTtl(Duration(5));
+        sender.send(msg);
+    }
+    Sender sender2 = other.createSender("amq.fanout");
+    sender2.send(Message("done"));
+    BOOST_CHECK_EQUAL(receiver2.fetch().getContent(), "done");
+    qpid::sys::usleep(qpid::sys::TIME_MSEC*5);//sorry Alan, I can't see any way to avoid a sleep; need to ensure messages in prefetch have expired 
+    receiver.close();
+}
+
+QPID_AUTO_TEST_CASE(testPriorityRingEviction)
+{
+    MessagingFixture fix;
+    std::string queue("queue; {create:always, node:{x-declare:{auto-delete:True, arguments:{qpid.priorities:10, qpid.max_count:5, qpid.policy_type:ring}}}}");
+    Sender sender = fix.session.createSender(queue);
+    Receiver receiver = fix.session.createReceiver(queue);
+    std::vector<Message> acquired;
+    for (uint i = 0; i < 5; ++i) {
+        Message msg((boost::format("msg_%1%") % (i+1)).str());
+        sender.send(msg);
+    }
+    //fetch but don't acknowledge messages, leaving them in acquired state
+    for (uint i = 0; i < 5; ++i) {
+        Message msg;
+        BOOST_CHECK(receiver.fetch(msg, Duration::IMMEDIATE));
+        BOOST_CHECK_EQUAL(msg.getContent(), (boost::format("msg_%1%") % (i+1)).str());
+        acquired.push_back(msg);
+    }
+    //send 5 more messages to the queue, which should cause all the
+    //acquired messages to be dropped
+    for (uint i = 5; i < 10; ++i) {
+        Message msg((boost::format("msg_%1%") % (i+1)).str());
+        sender.send(msg);
+    }
+    //now release the acquired messages, which should have been evicted...
+    for (std::vector<Message>::iterator i = acquired.begin(); i != acquired.end(); ++i) {
+        fix.session.release(*i);
+    }
+    acquired.clear();
+    //and check that the newest five are received
+    for (uint i = 5; i < 10; ++i) {
+        Message msg;
+        BOOST_CHECK(receiver.fetch(msg, Duration::IMMEDIATE));
+        BOOST_CHECK_EQUAL(msg.getContent(), (boost::format("msg_%1%") % (i+1)).str());
+        acquired.push_back(msg);
+    }
+    Message msg;
+    BOOST_CHECK(!receiver.fetch(msg, Duration::IMMEDIATE));
+}
+
 QPID_AUTO_TEST_SUITE_END()
 
 }} // namespace qpid::tests
