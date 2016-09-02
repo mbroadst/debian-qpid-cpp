@@ -1,3 +1,9 @@
+qpid-cpp (1.35-0qpid+precise1) precise; urgency=medium
+
+  * Rebased on 1.35.0
+
+ -- Matt Broadstone <mbroadst@gmail.com>  Thu, 01 Sep 2016 19:33:05 -0400
+
 qpid-cpp (0.34-2precise+qpid1) precise; urgency=medium
 
   * Updated patches for precise in order to build qpid-cpp 0.34
