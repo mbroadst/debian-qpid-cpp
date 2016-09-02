@@ -22,7 +22,7 @@ Build-Depends: debhelper (>= 9.0.0~),
                libibverbs-dev,
                swig,
                ruby,
-               libqpid-proton4-dev (>= 0.11~)
+               libqpid-proton8-dev (>= 0.11~)
 Standards-Version: 3.9.5
 Homepage: http://qpid.apache.org/
 Vcs-Browser: http://git.debian.org/?p=pkg-middleware/qpid-cpp.git
@@ -30,7 +30,7 @@ Vcs-Git: git://git.debian.org/git/pkg-middleware/qpid-cpp.git
 
 Package: libqpidtypes1
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Qpid AMQP types libraries
@@ -70,7 +70,7 @@ Description: Qpid AMQP types development libraries
 
 Package: libqpidclient2
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Qpid client libraries
@@ -151,7 +151,7 @@ Description: Qpid common development libraries
 
 Package: libqpidmessaging2
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Qpid messaging libraries
@@ -194,7 +194,7 @@ Description: Qpid messaging development libraries
 
 Package: libqpidbroker2
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Qpid broker libraries
@@ -234,7 +234,7 @@ Description: Qpid broker development libraries
 
 Package: libqmf2-1
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Pre-Depends: multiarch-support
 Multi-Arch: same
 Description: Qpid Messaging Framework v2 libraries
@@ -261,7 +261,7 @@ Description: Qpid Messaging Framework v2 development libraries
 Package: python-qpid-messaging
 Architecture: any
 Section: python
-Depends: ${python:Depends}, ${misc:Depends}, ${shlibs:Depends}
+Depends: ${python:Depends}, ${misc:Depends}, ${shlibs:Depends}, ${misc:Pre-Depends}
 Provides: ${python:Provides}
 Description: Python language bindings for Qpid, wrapping the C++ libraries
  Apache Qpid is a cross-platform enterprise messaging system which implements
@@ -317,7 +317,7 @@ Package: qpidd
 Architecture: any
 Depends: adduser,
          libqpidcommon2 (= ${binary:Version}),
-         ${shlibs:Depends}, ${misc:Depends}
+         ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Description: Qpid broker
  Apache Qpid is a cross-platform enterprise messaging system which implements
  the Advanced Message Queuing Protocol (AMQP), providing message brokers
@@ -330,7 +330,7 @@ Package: qpidd-legacy-store
 Architecture: any
 Pre-Depends: multiarch-support
 Depends: qpidd (= ${binary:Version}),
-         ${shlibs:Depends}, ${misc:Depends}
+         ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Provides: qpidd-store
 Conflicts: qpidd-store
 Replaces: qpidd-store
@@ -346,7 +346,7 @@ Package: qpidd-linear-store
 Architecture: any
 Pre-Depends: multiarch-support
 Depends: qpidd (= ${binary:Version}),
-         ${shlibs:Depends}, ${misc:Depends}
+         ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Description: Qpid broker linear store libraries
  Apache Qpid is a cross-platform enterprise messaging system which implements
  the Advanced Message Queuing Protocol (AMQP), providing message brokers
@@ -358,7 +358,7 @@ Description: Qpid broker linear store libraries
 Package: qpidd-ha
 Architecture: any
 Depends: qpidd (= ${binary:Version}),
-         ${shlibs:Depends}, ${misc:Depends}
+         ${shlibs:Depends}, ${misc:Depends}, ${misc:Pre-Depends}
 Description: Qpid broker high availability libraries
  Apache Qpid is a cross-platform enterprise messaging system which implements
  the Advanced Message Queuing Protocol (AMQP), providing message brokers

@@ -1,5 +1,5 @@
-README.txt
-NOTICE
-RELEASE_NOTES
-SSL
-DESIGN
+README.md
+NOTICE.txt
+docs/ssl.txt
+docs/design/overview.txt
+
