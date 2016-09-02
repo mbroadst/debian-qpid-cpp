@@ -1,0 +1,26 @@
+*.ico                      binary
+*.bmp                      binary
+
+*.sln                      eol=crlf
+*.vcproj                   eol=crlf
+
+bindings/qpid/dotnet/**/*  eol=crlf
+packaging/winsdk/**/*      eol=crlf
+packaging/windows/**/*     eol=crlf
+src/qpid/store/ms-sql/**/* eol=crlf
+src/windows/**/*           eol=crlf
+
+src/CMakeWinVersions.cmake eol=crlf
+
+INSTALL-WINDOWS.txt eol=crlf
+docs/design/windows_clfs_store_design.txt eol=crlf
+managementgen/qmfgen/templates/CMakeLists.cmake eol=crlf
+src/tests/background.ps1 eol=crlf
+src/tests/find_prog.ps1 eol=crlf
+bindings/qpid/dotnet/src/Logger.h eol=crlf
+packaging/winsdk/bld-winsdk.ps1 eol=crlf
+
+bindings/qpid/dotnet/CMakeLists.txt eol=lf
+bindings/qpid/dotnet/examples/csharp.example.helloworld/csharp.example.helloworld.cs eol=lf
+packaging/windows/LICENSE.rtf eol=lf
+
