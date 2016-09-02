@@ -26,16 +26,6 @@ foreach (r ${REQUIRE})
   message(STATUS "Forcing ${r} to ${${r}_force}")
 endforeach(r)
 
-# Capture specified C++ compiler (if any)
-if (NOT ENV_CXX)
-  if (NOT "$ENV{CXX}" STREQUAL "")
-    set(CXX $ENV{CXX})
-  else(NOT "$ENV{CXX}" STREQUAL "")
-    set(CXX ${CMAKE_CXX_COMPILER})
-  endif(NOT "$ENV{CXX}" STREQUAL "")
-  set(ENV_CXX ${CXX} CACHE INTERNAL "C++ compiler specified in cmake environment")
-endif (NOT ENV_CXX)
-
 include(CheckFunctionExists)
 include(CheckIncludeFileCXX)
 include(CheckIncludeFiles)
@@ -46,7 +36,6 @@ include(CheckSizetDistinct)
 
 find_package(PkgConfig)
 find_package(Ruby)
-find_package(PythonInterp REQUIRED)
 
 find_package(Doxygen)
 
@@ -54,22 +43,32 @@ find_program(VALGRIND_EXECUTABLE valgrind DOC "Location of the valgrind program"
 mark_as_advanced(VALGRIND_EXECUTABLE)
 find_package_handle_standard_args(VALGRIND DEFAULT_MSG VALGRIND_EXECUTABLE)
 
-find_program(SASLPASSWD2_EXECUTABLE saslpasswd2 DOC "Location of the saslpasswd2 program")
-mark_as_advanced(SASLPASSWD2_EXECUTABLE)
+# See if Cyrus SASL is available
+find_library(CYRUS_SASL_LIBRARY sasl2)
+find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h PATH_SUFFIXES include)
+find_package_handle_standard_args(CyrusSASL DEFAULT_MSG CYRUS_SASL_LIBRARY CYRUS_SASL_INCLUDE_DIR)
+mark_as_advanced(CYRUS_SASL_LIBRARY CYRUS_SASL_INCLUDE_DIR)
 
-# See if Cyrus SASL is desired and available
-CHECK_LIBRARY_EXISTS (sasl2 sasl_checkpass "" FOUND_SASL_LIB)
-CHECK_INCLUDE_FILES (sasl/sasl.h FOUND_SASL_H)
-find_package_handle_standard_args(SASL DEFAULT_MSG FOUND_SASL_LIB FOUND_SASL_H)
+# Find saslpasswd2 executable to generate test config
+find_program(SASLPASSWD2_EXECUTABLE saslpasswd2 DOC "Program used to make SASL user db for testing")
+mark_as_advanced(SASLPASSWD2_EXECUTABLE)
 
 #set (CMAKE_VERBOSE_MAKEFILE ON)  # for debugging
 
-# Add a test to check the exported library API against expected API symbols
-MACRO (add_api_test libname)
-  if (NOT CMAKE_SYSTEM_NAME STREQUAL Windows AND BUILD_TESTING)
-    add_test(api_check_${libname} ${CMAKE_CURRENT_SOURCE_DIR}/check-abi "${ENV_CXX}" ${CMAKE_CURRENT_BINARY_DIR}/lib${libname}.so ${CMAKE_CURRENT_SOURCE_DIR}/lib${libname}-api-symbols.txt)
-  endif (NOT CMAKE_SYSTEM_NAME STREQUAL Windows AND BUILD_TESTING)
-ENDMACRO (add_api_test libname)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL Windows AND BUILD_TESTING)
+  # Executables used in testing the library ABIs
+  add_executable(cppabi cppabi.cpp)
+  add_executable(expand_types expand_types.cpp)
+
+  # Add a test to check the exported library API against expected API symbols
+  MACRO (add_api_test libname)
+    add_test(api_check_${libname} ${CMAKE_CURRENT_SOURCE_DIR}/check-abi ${CMAKE_CURRENT_BINARY_DIR}/lib${libname}.so ${CMAKE_CURRENT_SOURCE_DIR}/lib${libname}-api-symbols.txt)
+  ENDMACRO (add_api_test libname)
+else (NOT CMAKE_SYSTEM_NAME STREQUAL Windows AND BUILD_TESTING)
+  # If the test isn't applicable use a dummy macro
+  MACRO (add_api_test libname)
+  ENDMACRO (add_api_test libname)
+endif (NOT CMAKE_SYSTEM_NAME STREQUAL Windows AND BUILD_TESTING)
 
 
 # check if we generate source as part of the build
@@ -157,7 +156,15 @@ if (NOT ENABLE_WARNINGS)
   set (WARNING_FLAGS "")
 endif (NOT ENABLE_WARNINGS)
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${WARNING_FLAGS}")
+if (GCC_VERSION AND NOT GCC_VERSION VERSION_LESS 5.1)
+  option(ENABLE_GLIBCXX_OLD_ABI "Enable old (pre GCC 5.1) C++ ABI" OFF)
+endif ()
+
+if (ENABLE_GLIBCXX_OLD_ABI)
+  set (ABI_DEF "-D_GLIBCXX_USE_CXX11_ABI=0")
+endif (ENABLE_GLIBCXX_OLD_ABI)
+
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ABI_DEF} ${COMPILER_FLAGS} ${WARNING_FLAGS}")
 
 # Expand a bit from the basic Find_Boost; be specific about what's needed.
 # Boost.system is sometimes needed; it's handled separately, below.
@@ -179,7 +186,8 @@ if (NOT DEFINED Boost_ADDITIONAL_VERSIONS)
         "1.45" "1.45.0" "1.46" "1.46.0" "1.47" "1.47.0"
         "1.48" "1.48.0" "1.49" "1.49.0" "1.50" "1.50.0"
         "1.51" "1.51.0" "1.52" "1.52.0" "1.53" "1.53.0"
-        "1.54" "1.54.0" "1.55" "1.55.0")
+        "1.54" "1.54.0" "1.55" "1.55.0" "1.56" "1.56.0"
+        "1.57" "1.57.0" "1.58" "1.58.0")
 endif (NOT DEFINED Boost_ADDITIONAL_VERSIONS)
 
 # Discover Boost version
@@ -353,17 +361,18 @@ endif (NOT CMAKE_SYSTEM_NAME STREQUAL Windows)
 
 check_size_t_distinct (QPID_SIZE_T_DISTINCT)
 
-option(BUILD_SASL "Build with Cyrus SASL support" ${SASL_FOUND})
+option(BUILD_SASL "Build with Cyrus SASL support" ${CYRUSSASL_FOUND})
 if (BUILD_SASL)
-  if (NOT SASL_FOUND)
-    message(FATAL_ERROR "Cyrus SASL support requested but libsasl2 libraryor headers not found")
-  endif (NOT SASL_FOUND)
+  if (NOT CYRUSSASL_FOUND)
+    message(FATAL_ERROR "Cyrus SASL support requested but libsasl2 library or headers not found")
+  endif (NOT CYRUSSASL_FOUND)
 
   set(qpidcommon_sasl_source
       qpid/sys/cyrus/CyrusSecurityLayer.h
       qpid/sys/cyrus/CyrusSecurityLayer.cpp
      )
-  set(sasl_LIB sasl2)
+  include_directories (${CYRUS_SASL_INCLUDE_DIR})
+  set(sasl_LIB ${CYRUS_SASL_LIBRARY})
   set(HAVE_SASL 1)
 else (BUILD_SASL)
   set(HAVE_SASL 0)
@@ -485,8 +494,7 @@ if (BUILD_XML)
                qpid/xml/XmlExchangePlugin.cpp)
   target_link_libraries (xml xerces-c xqilla qpidbroker qpidcommon)
   set_target_properties (xml PROPERTIES
-                         PREFIX ""
-                         COMPILE_DEFINITIONS _IN_QPID_BROKER)
+                         PREFIX "")
   install (TARGETS xml
            DESTINATION ${QPIDD_MODULE_DIR}
            COMPONENT ${QPID_COMPONENT_BROKER})
@@ -495,30 +503,23 @@ if (BUILD_XML)
 
 endif (BUILD_XML)
 
-# Build the ACL plugin
-set (acl_default ON)
-
-option(BUILD_ACL "Build ACL enforcement broker plugin" ${acl_default})
-
-if (BUILD_ACL)
-  set (acl_SOURCES
-       qpid/acl/Acl.cpp
-       qpid/acl/Acl.h
-       qpid/acl/AclConnectionCounter.cpp
-       qpid/acl/AclConnectionCounter.h
-       qpid/acl/AclData.cpp
-       qpid/acl/AclData.h
-       qpid/acl/AclLexer.cpp
-       qpid/acl/AclLexer.h
-       qpid/acl/AclPlugin.cpp
-       qpid/acl/AclReader.cpp
-       qpid/acl/AclReader.h
-       qpid/acl/AclResourceCounter.cpp
-       qpid/acl/AclResourceCounter.h
-       qpid/acl/AclValidator.cpp
-       qpid/acl/AclValidator.h
-      )
-endif (BUILD_ACL)
+set (acl_SOURCES
+     qpid/acl/Acl.cpp
+     qpid/acl/Acl.h
+     qpid/acl/AclConnectionCounter.cpp
+     qpid/acl/AclConnectionCounter.h
+     qpid/acl/AclData.cpp
+     qpid/acl/AclData.h
+     qpid/acl/AclLexer.cpp
+     qpid/acl/AclLexer.h
+     qpid/acl/AclPlugin.cpp
+     qpid/acl/AclReader.cpp
+     qpid/acl/AclReader.h
+     qpid/acl/AclResourceCounter.cpp
+     qpid/acl/AclResourceCounter.h
+     qpid/acl/AclValidator.cpp
+     qpid/acl/AclValidator.h
+    )
 
 set (ha_default ON)
 
@@ -551,8 +552,6 @@ if (BUILD_HA)
         qpid/ha/Primary.cpp
         qpid/ha/Primary.h
         qpid/ha/PrimaryQueueLimits.h
-        qpid/ha/PrimaryTxObserver.cpp
-        qpid/ha/PrimaryTxObserver.h
         qpid/ha/QueueGuard.cpp
         qpid/ha/QueueGuard.h
         qpid/ha/QueueReplicator.cpp
@@ -570,10 +569,6 @@ if (BUILD_HA)
         qpid/ha/StandAlone.h
         qpid/ha/StatusCheck.cpp
         qpid/ha/StatusCheck.h
-        qpid/ha/TxReplicatingSubscription.cpp
-        qpid/ha/TxReplicatingSubscription.h
-        qpid/ha/TxReplicator.cpp
-        qpid/ha/TxReplicator.h
         qpid/ha/types.cpp
         qpid/ha/types.h
     )
@@ -583,8 +578,7 @@ if (BUILD_HA)
                            qpidtypes qpidcommon qpidbroker qpidmessaging
                            ${Boost_PROGRAM_OPTIONS_LIBRARY})
     set_target_properties (ha PROPERTIES
-                           PREFIX ""
-                           COMPILE_DEFINITIONS _IN_QPID_BROKER)
+                           PREFIX "")
     install (TARGETS ha
              DESTINATION ${QPIDD_MODULE_DIR}
              COMPONENT ${QPID_COMPONENT_BROKER})
@@ -1146,8 +1140,8 @@ target_link_libraries (qpidbroker qpidcommon qpidtypes
 
 set_target_properties (qpidbroker PROPERTIES
                        VERSION ${qpidbroker_version}
-                       SOVERSION ${qpidbroker_version_major}
-                       COMPILE_DEFINITIONS _IN_QPID_BROKER)
+                       SOVERSION ${qpidbroker_version_major})
+
 if (CMAKE_CXX_COMPILER_ID MATCHES XL)
   set_target_properties (qpidbroker PROPERTIES LINK_FLAGS -Wl,-bbigtoc)
 endif (CMAKE_CXX_COMPILER_ID MATCHES XL)
@@ -1170,7 +1164,6 @@ set (qpidd_SOURCES
 add_msvc_version (qpidd application exe)
 add_executable (qpidd ${qpidd_SOURCES})
 target_link_libraries (qpidd qpidbroker qpidcommon)
-set_target_properties (qpidd PROPERTIES COMPILE_DEFINITIONS _IN_QPID_BROKER)
 install (TARGETS qpidd
          RUNTIME DESTINATION ${QPID_INSTALL_SBINDIR} COMPONENT ${QPID_COMPONENT_BROKER}
          LIBRARY DESTINATION ${QPID_INSTALL_LIBDIR} COMPONENT ${QPID_COMPONENT_BROKER}

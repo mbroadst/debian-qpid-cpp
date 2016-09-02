@@ -37,6 +37,7 @@
 
 #include "qpid/framing/FieldTable.h"
 #include "qpid/framing/SequenceNumber.h"
+#include "qpid/sys/AtomicCount.h"
 #include "qpid/sys/AtomicValue.h"
 #include "qpid/sys/Monitor.h"
 #include "qpid/management/Manageable.h"
@@ -219,6 +220,7 @@ class Queue : public boost::enable_shared_from_this<Queue>,
     boost::intrusive_ptr<qpid::sys::TimerTask> autoDeleteTask;
     boost::shared_ptr<MessageDistributor> allocator;
     boost::scoped_ptr<Selector> selector;
+    qpid::sys::AtomicCount version;
 
     // Redirect source and target refer to each other. Only one is source.
     Queue::shared_ptr redirectPeer;
@@ -271,7 +273,7 @@ class Queue : public boost::enable_shared_from_this<Queue>,
                     uint32_t maxTests=0);
 
     virtual bool checkDepth(const QueueDepth& increment, const Message&);
-    void tryAutoDelete();
+    void tryAutoDelete(long expectedVersion);
   public:
 
     typedef std::vector<shared_ptr> vector;
@@ -297,7 +299,6 @@ class Queue : public boost::enable_shared_from_this<Queue>,
      */
     QPID_BROKER_EXTERN void create();
 
-    void destroyed();
     QPID_BROKER_EXTERN void bound(const std::string& exchange,
                                   const std::string& key,
                                   const qpid::framing::FieldTable& args);
@@ -330,6 +331,13 @@ class Queue : public boost::enable_shared_from_this<Queue>,
   private:
     QPID_BROKER_EXTERN void deliverTo(Message, TxBuffer* = 0);
   public:
+    /**
+     * Merges message annotations for an in-memory message as a result of
+     * a modified disposition outcome
+     */
+    QPID_BROKER_EXTERN void mergeMessageAnnotations(const QueueCursor& msg,
+                                                    const qpid::types::Variant::Map& annotations);
+
     /**
      * Returns a message to the in-memory queue (due to lack
      * of acknowledegement from a receiver). If a consumer is
@@ -530,8 +538,12 @@ class Queue : public boost::enable_shared_from_this<Queue>,
 
     //utility function
     static bool reroute(boost::shared_ptr<Exchange> e, const Message& m);
+    static bool isExpired(const std::string& queueName, const Message&, qpid::sys::AbsTime);
 
+  private:
+    void destroyed();           // Only called by QueueRegistry::destroy()
   friend class QueueFactory;
+  friend class QueueRegistry;
 };
 }
 }

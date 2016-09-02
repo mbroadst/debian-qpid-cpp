@@ -248,6 +248,11 @@ int WinSocket::getError() const
     return result;
 }
 
+// TODO: I don't think this can ever be called!
+std::string WinSocket::lastErrorCodeText() const
+{
+    return strError(::WSAGetLastError());
+}
 void WinSocket::setTcpNoDelay() const
 {
     SOCKET& socket = handle->fd;
@@ -268,9 +273,14 @@ int WinSocket::getKeyLen() const
     return 0;
 }
 
-std::string WinSocket::getClientAuthId() const
+std::string WinSocket::getPeerAuthId() const
 {
     return std::string();
+}
+
+std::string WinSocket::getLocalAuthId() const
+{
+    return "dummy";
 }
 
 }} // namespace qpid::sys

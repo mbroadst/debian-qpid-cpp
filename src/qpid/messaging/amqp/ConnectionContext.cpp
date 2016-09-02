@@ -285,7 +285,7 @@ bool ConnectionContext::get(boost::shared_ptr<SessionContext> ssn, boost::shared
         checkClosed(ssn, lnk);
         pn_delivery_t* current = pn_link_current((pn_link_t*) lnk->receiver);
         QPID_LOG(debug, "In ConnectionContext::get(), current=" << current);
-        if (current) {
+        if (current && !pn_delivery_partial(current)) {
             qpid::messaging::MessageImpl& impl = MessageImplAccess::get(message);
             boost::shared_ptr<EncodedMessage> encoded(new EncodedMessage(pn_delivery_pending(current)));
             encoded->setNestAnnotationsOption(nestAnnotations);
@@ -500,6 +500,7 @@ void ConnectionContext::sendLH(
     }
     while (!snd->send(message, delivery)) {
         QPID_LOG(debug, "Waiting for capacity...");
+        if (pn_transport_pending(engine)) wakeupDriver();
         wait(ssn, snd);//wait for capacity
     }
     wakeupDriver();
@@ -821,7 +822,9 @@ std::size_t ConnectionContext::decodePlain(const char* buffer, std::size_t size)
             }
         }
         QPID_LOG_CAT(debug, network, id << " decoded " << n << " bytes from " << size)
-        pn_transport_tick(engine, qpid::sys::Duration::FromEpoch() / qpid::sys::TIME_MSEC);
+        // QPID-6698: don't use wallclock here, use monotonic clock
+        int64_t now = qpid::sys::Duration(qpid::sys::ZERO, qpid::sys::AbsTime::now());
+        pn_transport_tick(engine, now / int64_t(qpid::sys::TIME_MSEC));
         lock.notifyAll();
         return n;
     } else if (n == PN_ERR) {
@@ -852,6 +855,7 @@ std::size_t ConnectionContext::encodePlain(char* buffer, std::size_t size)
         QPID_LOG_CAT(debug, network, id << " encoded " << n << " bytes from " << size)
         haveOutput = true;
         if (notifyOnWrite) lock.notifyAll();
+        if (ticker) ticker->restart();
         return n;
     } else if (n == PN_ERR) {
         std::string error;
@@ -876,8 +880,11 @@ std::size_t ConnectionContext::encodePlain(char* buffer, std::size_t size)
 bool ConnectionContext::canEncodePlain()
 {
     sys::Monitor::ScopedLock l(lock);
-    pn_transport_tick(engine, qpid::sys::Duration::FromEpoch() / qpid::sys::TIME_MSEC);
-    return haveOutput && state == CONNECTED;
+
+    // QPID-6698: don't use wallclock here, use monotonic clock
+    int64_t now = qpid::sys::Duration(qpid::sys::ZERO, qpid::sys::AbsTime::now());
+    pn_transport_tick(engine, now / int64_t(qpid::sys::TIME_MSEC));
+    return (haveOutput || pn_transport_pending(engine)) && state == CONNECTED;
 }
 void ConnectionContext::closed()
 {

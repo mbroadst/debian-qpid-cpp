@@ -237,8 +237,10 @@ Queue::Queue(const string& _name, const QueueSettings& _settings,
 
 Queue::~Queue()
 {
-    if (mgmtObject != 0)
+    if (mgmtObject != 0) {
         mgmtObject->debugStats("destroying");
+        mgmtObject->resourceDestroy();
+    }
 }
 
 bool Queue::isLocal(const Message& msg)
@@ -274,10 +276,13 @@ bool Queue::accept(const Message& msg)
         //drop message
         QPID_LOG(info, "Dropping excluded message from " << getName());
         return false;
-    } else if (selector) {
-        return selector->filter(msg);
     } else {
-        return true;
+        messages->check(msg);
+        if (selector) {
+            return selector->filter(msg);
+        } else {
+            return true;
+        }
     }
 }
 
@@ -338,6 +343,19 @@ void Queue::process(Message& msg)
             brokerMgmtObject->statisticsUpdated();
         }
     }
+}
+
+void Queue::mergeMessageAnnotations(const QueueCursor& position,
+                                    const qpid::types::Variant::Map& messageAnnotations)
+{
+  Mutex::ScopedLock locker(messageLock);
+  Message *message = messages->find(position);
+  if (!message) return;
+
+  qpid::types::Variant::Map::const_iterator it;
+  for (it = messageAnnotations.begin(); it != messageAnnotations.end(); ++it) {
+    message->addAnnotation(it->first, it->second);
+  }
 }
 
 void Queue::release(const QueueCursor& position, bool markRedelivered)
@@ -418,7 +436,7 @@ bool Queue::getNextMessage(Message& m, Consumer::shared_ptr& c)
         QueueCursor cursor = c->getCursor(); // Save current position.
         Message* msg = messages->next(*c);   // Advances c.
         if (msg) {
-            if (msg->getExpiration() < sys::AbsTime::now()) {
+            if (isExpired(name, *msg,  sys::AbsTime::now())) {
                 QPID_LOG(debug, "Message expired from queue '" << name << "'");
                 observeDequeue(*msg, locker, settings.autodelete ? &autodelete : 0);
                 //ERROR: don't hold lock across call to store!!
@@ -624,11 +642,14 @@ void Queue::cancel(Consumer::shared_ptr c, const std::string& connectionId, cons
     }
 }
 
-namespace{
-bool hasExpired(const Message& m, AbsTime now)
+bool Queue::isExpired(const std::string& name, const Message& m, AbsTime now)
 {
-    return m.getExpiration() < now;
-}
+    if (m.getExpiration() < now) {
+        QPID_LOG(debug, "Message expired from queue '" << name << "': " << m.printProperties());
+        return true;
+    } else {
+        return false;
+    }
 }
 
 /**
@@ -643,7 +664,7 @@ void Queue::purgeExpired(sys::Duration lapse) {
     int seconds = int64_t(lapse)/qpid::sys::TIME_SEC;
     if (seconds == 0 || count / seconds < 1) {
         sys::AbsTime time = sys::AbsTime::now();
-        uint32_t count = remove(0, boost::bind(&hasExpired, _1, time), 0, CONSUMER, settings.autodelete);
+        uint32_t count = remove(0, boost::bind(&isExpired, name, _1, time), 0, CONSUMER, settings.autodelete);
         QPID_LOG(debug, "Purged " << count << " expired messages from " << getName());
         //
         // Report the count of discarded-by-ttl messages
@@ -1291,9 +1312,10 @@ boost::shared_ptr<Exchange> Queue::getAlternateExchange()
 struct AutoDeleteTask : qpid::sys::TimerTask
 {
     Queue::shared_ptr queue;
+    long expectedVersion;
 
     AutoDeleteTask(Queue::shared_ptr q, AbsTime fireTime)
-        : qpid::sys::TimerTask(fireTime, "DelayedAutoDeletion:"+q->getName()), queue(q) {}
+        : qpid::sys::TimerTask(fireTime, "DelayedAutoDeletion:"+q->getName()), queue(q), expectedVersion(q->version) {}
 
     void fire()
     {
@@ -1301,7 +1323,7 @@ struct AutoDeleteTask : qpid::sys::TimerTask
         //created, but then became unused again before the task fired;
         //in this case ignore this request as there will have already
         //been a later task added
-        queue->tryAutoDelete();
+        queue->tryAutoDelete(expectedVersion);
     }
 };
 
@@ -1314,29 +1336,36 @@ void Queue::scheduleAutoDelete(bool immediate)
             broker->getTimer().add(autoDeleteTask);
             QPID_LOG(debug, "Timed auto-delete for " << getName() << " initiated");
         } else {
-            tryAutoDelete();
+            tryAutoDelete(version);
         }
     }
 }
 
-void Queue::tryAutoDelete()
+void Queue::tryAutoDelete(long expectedVersion)
 {
     bool proceed(false);
     {
         Mutex::ScopedLock locker(messageLock);
         if (!deleted && checkAutoDelete(locker)) {
             proceed = true;
-            deleted = true;
         }
     }
 
     if (proceed) {
-        broker->getQueues().destroy(name);
-        if (broker->getAcl())
-            broker->getAcl()->recordDestroyQueue(name);
+        if (broker->getQueues().destroyIfUntouched(name, expectedVersion)) {
+            {
+                Mutex::ScopedLock locker(messageLock);
+                deleted = true;
+            }
+            if (broker->getAcl())
+                broker->getAcl()->recordDestroyQueue(name);
 
-        QPID_LOG_CAT(debug, model, "Auto-delete queue deleted: " << name << " (" << deleted << ")");
-        destroyed();
+            QPID_LOG_CAT(debug, model, "Auto-delete queue deleted: " << name << " (" << deleted << ")");
+        } else {
+            //queue was accessed since the delayed auto-delete was scheduled, so try again
+            QPID_LOG_CAT(debug, model, "Auto-delete interrupted for queue: " << name);
+            scheduleAutoDelete();
+        }
     } else {
         QPID_LOG_CAT(debug, model, "Auto-delete queue could not be deleted: " << name);
     }
