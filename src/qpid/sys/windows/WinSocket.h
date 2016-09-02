@@ -87,6 +87,8 @@ public:
      */
     QPID_COMMON_EXTERN int getError() const;
 
+    QPID_COMMON_EXTERN std::string lastErrorCodeText() const;
+
     /** Accept a connection from a socket that is already listening
      * and has an incoming connection
      */
@@ -97,7 +99,8 @@ public:
     QPID_COMMON_EXTERN virtual int write(const void *buf, size_t count) const;
 
     QPID_COMMON_EXTERN int getKeyLen() const;
-    QPID_COMMON_EXTERN std::string getClientAuthId() const;
+    QPID_COMMON_EXTERN std::string getPeerAuthId() const;
+    QPID_COMMON_EXTERN std::string getLocalAuthId() const;
 
 protected:
     /** Create socket */

@@ -47,8 +47,6 @@
 #include <key.h>
 #include <sslerr.h>
 
-#include <boost/format.hpp>
-
 namespace qpid {
 namespace sys {
 namespace ssl {
@@ -80,6 +78,43 @@ std::string getDomainFromSubject(std::string subject)
         i = subject.find_first_of(DN_DELIMS, last);
     }
     return domain;
+}
+
+struct LocalCertificateGetter
+{
+    LocalCertificateGetter(PRFileDesc* nssSocket) : socket(nssSocket) {}
+    CERTCertificate* operator()() const {return SSL_LocalCertificate(socket);}
+    PRFileDesc* socket;
+};
+struct PeerCertificateGetter
+{
+    PeerCertificateGetter(PRFileDesc* nssSocket) : socket(nssSocket) {}
+    CERTCertificate* operator()() const {return SSL_PeerCertificate(socket);}
+    PRFileDesc* socket;
+};
+template<typename CertificateGetter>
+std::string getAuthId(CertificateGetter certificateGetter)
+{
+    std::string authId;
+    CERTCertificate* cert = certificateGetter();
+    if (cert) {
+        char *cn = CERT_GetCommonName(&(cert->subject));
+        if (cn) {
+            authId = std::string(cn);
+            /*
+             * The NSS function CERT_GetDomainComponentName only returns
+             * the last component of the domain name, so we have to parse
+             * the subject manually to extract the full domain.
+             */
+            std::string domain = getDomainFromSubject(cert->subjectName);
+            if (!domain.empty()) {
+                authId += DOMAIN_SEPARATOR;
+                authId += domain;
+            }
+        }
+        CERT_DestroyCertificate(cert);
+    }
+    return authId;
 }
 }
 
@@ -317,14 +352,23 @@ Socket* SslMuxSocket::accept() const
     }
 }
 
+std::string SslSocket::lastErrorCodeText() const
+{
+  return getErrorString(lastErrorCode);
+}
+
 int SslSocket::read(void *buf, size_t count) const
 {
-    return PR_Read(nssSocket, buf, count);
+    PRInt32 r = PR_Read(nssSocket, buf, count);
+    lastErrorCode = PR_GetError();
+    return r;
 }
 
 int SslSocket::write(const void *buf, size_t count) const
 {
-    return PR_Write(nssSocket, buf, count);
+    PRInt32 r = PR_Write(nssSocket, buf, count);
+    lastErrorCode = PR_GetError();
+    return r;
 }
 
 void SslSocket::setCertName(const std::string& name)
@@ -352,28 +396,14 @@ int SslSocket::getKeyLen() const
     return 0;
 }
 
-std::string SslSocket::getClientAuthId() const
+std::string SslSocket::getPeerAuthId() const
 {
-    std::string authId;
-    CERTCertificate* cert = SSL_PeerCertificate(nssSocket);
-    if (cert) {
-        char *cn = CERT_GetCommonName(&(cert->subject));
-        if (cn) {
-            authId = std::string(cn);
-            /*
-             * The NSS function CERT_GetDomainComponentName only returns
-             * the last component of the domain name, so we have to parse
-             * the subject manually to extract the full domain.
-             */
-            std::string domain = getDomainFromSubject(cert->subjectName);
-            if (!domain.empty()) {
-                authId += DOMAIN_SEPARATOR;
-                authId += domain;
-            }
-        }
-        CERT_DestroyCertificate(cert);
-    }
-    return authId;
+    return getAuthId(PeerCertificateGetter(nssSocket));
+}
+
+std::string SslSocket::getLocalAuthId() const
+{
+    return getAuthId(LocalCertificateGetter(nssSocket));
 }
 
 }}} // namespace qpid::sys::ssl

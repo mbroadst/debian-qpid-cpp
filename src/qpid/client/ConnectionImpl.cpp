@@ -286,7 +286,7 @@ void ConnectionImpl::open()
     try {
         handler.waitForOpen();
         QPID_LOG(info, *this << " connected to " << protocol << ":" << host << ":" << port);
-    } catch (const Exception& e) {
+    } catch (const Exception&) {
         connector->checkVersion(version);
         throw;
     }
@@ -448,5 +448,8 @@ std::ostream& operator<<(std::ostream& o, const ConnectionImpl& c) {
         return o << "Connection <not connected>";
 }
 
+void shutdown() {
+    theIO().poller()->shutdown();
+}
 
 }} // namespace qpid::client

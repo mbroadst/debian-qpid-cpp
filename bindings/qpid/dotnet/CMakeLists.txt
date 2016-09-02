@@ -157,8 +157,7 @@ if (MSVC)
         file(TO_NATIVE_PATH ${DOTNET_relPathToSrc} DOTNET_relPathToSrc)
     endif()
 
-    if((${CMAKE_GENERATOR} STREQUAL "Visual Studio 9 2008") OR
-       (${CMAKE_GENERATOR} STREQUAL "Visual Studio 9 2008 Win64"))
+    if(${CMAKE_GENERATOR} MATCHES "^Visual Studio 9")
         # Visual Studio 2008
         select_msvc9_files()
         set(DOTNET_MSVC_SELECT              "msvc9")
@@ -167,8 +166,7 @@ if (MSVC)
         set(DOTNET_TARGET_FRAMEWORK_VERSION "v3.5")
         set(DOTNET_PLATFORM_TOOLSET         "")
 
-    elseif((${CMAKE_GENERATOR} STREQUAL "Visual Studio 10") OR
-           (${CMAKE_GENERATOR} STREQUAL "Visual Studio 10 Win64"))
+    elseif(${CMAKE_GENERATOR} MATCHES "^Visual Studio 10")
         # Visual Studio 2010
         select_msvcx_files()
         set(DOTNET_MSVC_SELECT              "msvcx")
@@ -177,8 +175,7 @@ if (MSVC)
         set(DOTNET_TARGET_FRAMEWORK_VERSION "v4.0")
         set(DOTNET_PLATFORM_TOOLSET         "")
 
-    elseif((${CMAKE_GENERATOR} STREQUAL "Visual Studio 11") OR
-           (${CMAKE_GENERATOR} STREQUAL "Visual Studio 11 Win64"))
+    elseif(${CMAKE_GENERATOR} MATCHES "^Visual Studio 11")
         # Visual Studio 2012
         select_msvcx_files()
         set(DOTNET_MSVC_SELECT              "msvcx")
@@ -186,6 +183,15 @@ if (MSVC)
         set(DOTNET_SLN_VISUAL_STUDIO        "Visual Studio 2012")
         set(DOTNET_TARGET_FRAMEWORK_VERSION "v4.5")
         set(DOTNET_PLATFORM_TOOLSET         "<PlatformToolset>v110</PlatformToolset>")
+
+    elseif(${CMAKE_GENERATOR} MATCHES "^Visual Studio 12")
+        # Visual Studio 2013
+        select_msvcx_files()
+        set(DOTNET_MSVC_SELECT              "msvcx")
+        set(DOTNET_SLN_FILE_FORMAT          "13.00")
+        set(DOTNET_SLN_VISUAL_STUDIO        "Visual Studio 2013")
+        set(DOTNET_TARGET_FRAMEWORK_VERSION "v4.5")
+        set(DOTNET_PLATFORM_TOOLSET         "<PlatformToolset>v120</PlatformToolset>")
 
     else()
         message(FATAL_ERROR "No DOTNET binding support available for ${CMAKE_GENERATOR}")

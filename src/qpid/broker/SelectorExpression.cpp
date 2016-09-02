@@ -27,6 +27,8 @@
 #include "qpid/sys/IntegerTypes.h"
 #include "qpid/sys/regex.h"
 
+#include <cstdlib>
+#include <cerrno>
 #include <string>
 #include <memory>
 #include <ostream>
@@ -45,6 +47,10 @@
  *
  * Alpha ::= [a-zA-Z]
  * Digit ::= [0-9]
+ * HexDigit ::= [0-9a-fA-F]
+ * OctDigit ::= [0-7]
+ * BinDigit ::= [0-1]
+ *
  * IdentifierInitial ::= Alpha | "_" | "$"
  * IdentifierPart ::= IdentifierInitial | Digit | "."
  * Identifier ::= IdentifierInitial IdentifierPart*
@@ -52,7 +58,10 @@
  *
  * LiteralString ::= ("'" [^']* "'")+ // Repeats to cope with embedded single quote
  *
- * LiteralExactNumeric ::= Digit+
+ * // LiteralExactNumeric is a little simplified as it also allows underscores ("_") as internal seperators and suffix "l" or "L"
+ * LiteralExactNumeric ::= "0x" HexDigit+ | "0X" HexDigit+ | "0b" BinDigit+ | "0B" BinDigit+ | "0" OctDigit* | Digit+
+ *
+ * // LiteralApproxNumeric is a little simplified as it also allows suffix "d", "D", "f", "F"
  * Exponent ::= ('+'|'-')? LiteralExactNumeric
  * LiteralApproxNumeric ::= ( Digit "." Digit* ( "E" Exponent )? ) |
  *                          ( "." Digit+ ( "E" Exponent )? ) |
@@ -86,7 +95,8 @@
  *
  * MultiplyExpression :: = UnaryArithExpression ( MultiplyOps UnaryArithExpression )*
  *
- * UnaryArithExpression ::= AddOps AddExpression |
+ * UnaryArithExpression ::= "-" LiteralExactNumeric |  // This is a special case to simplify negative ints
+ *                          AddOps AddExpression |
  *                          "(" OrExpression ")" |
  *                          PrimaryExpression
  *
@@ -369,13 +379,10 @@ public:
 
     BoolOrNone eval_bool(const SelectorEnv& env) const {
         Value ve(e->eval(env));
-        if (unknown(ve)) return BN_UNKNOWN;
         Value vl(l->eval(env));
-        if (!unknown(vl) && ve<vl) return BN_FALSE;
         Value vu(u->eval(env));
-        if (!unknown(vu) && ve>vu) return BN_FALSE;
-        if (unknown(vl) || unknown(vu)) return BN_UNKNOWN;
-        return BN_TRUE;
+        if (unknown(ve) || unknown(vl) || unknown(vu)) return BN_UNKNOWN;
+        return BoolOrNone(ve>=vl && ve<=vu);
     }
 };
 
@@ -408,6 +415,49 @@ public:
                 continue;
             }
             if (ve==li) return BN_TRUE;
+        }
+        return r;
+    }
+};
+
+class NotInExpression : public BoolExpression {
+    boost::scoped_ptr<Expression> e;
+    boost::ptr_vector<Expression> l;
+
+public:
+    NotInExpression(Expression* e_, boost::ptr_vector<Expression>& l_) :
+        e(e_)
+    {
+        l.swap(l_);
+    }
+
+    void repr(ostream& os) const {
+        os << *e << " NOT IN (";
+        for (std::size_t i = 0; i<l.size(); ++i){
+            os << l[i] << (i<l.size()-1 ? ", " : ")");
+        }
+    }
+
+    BoolOrNone eval_bool(const SelectorEnv& env) const {
+        Value ve(e->eval(env));
+        if (unknown(ve)) return BN_UNKNOWN;
+        BoolOrNone r = BN_TRUE;
+        for (std::size_t i = 0; i<l.size(); ++i){
+            Value li(l[i].eval(env));
+            if (unknown(li)) {
+                r = BN_UNKNOWN;
+                continue;
+            }
+            // Check if types are incompatible. If nothing further in the list
+            // matches or is unknown and we had a type incompatibility then
+            // result still false.
+            if (r!=BN_UNKNOWN &&
+                !sameType(ve,li) && !(numeric(ve) && numeric(li))) {
+                r = BN_FALSE;
+                continue;
+            }
+
+            if (ve==li) return BN_FALSE;
         }
         return r;
     }
@@ -768,7 +818,7 @@ Expression* andExpression(Tokeniser& tokeniser)
     return e.release();
 }
 
-BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expression> e1) {
+BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expression> e1, bool negated = false) {
     switch (tokeniser.nextToken().type) {
     case T_LIKE: {
         const Token t = tokeniser.nextToken();
@@ -777,6 +827,7 @@ BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expressio
             return 0;
         }
         // Check for "ESCAPE"
+        std::auto_ptr<BoolExpression> l;
         if ( tokeniser.nextToken().type==T_ESCAPE ) {
             const Token e = tokeniser.nextToken();
             if ( e.type!=T_STRING ) {
@@ -789,11 +840,12 @@ BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expressio
             if (e.val=="%" || e.val=="_") {
                 throwParseError(tokeniser, "'%' and '_' are not allowed as ESCAPE characters");
             }
-            return new LikeExpression(e1.release(), t.val, e.val);
+            l.reset(new LikeExpression(e1.release(), t.val, e.val));
         } else {
             tokeniser.returnTokens();
-            return new LikeExpression(e1.release(), t.val);
+            l.reset(new LikeExpression(e1.release(), t.val));
         }
+        return negated ? new UnaryBooleanExpression(&notOp, l.release()) : l.release();
     }
     case T_BETWEEN: {
         std::auto_ptr<Expression> lower(addExpression(tokeniser));
@@ -804,7 +856,8 @@ BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expressio
         }
         std::auto_ptr<Expression> upper(addExpression(tokeniser));
         if ( !upper.get() ) return 0;
-        return new BetweenExpression(e1.release(), lower.release(), upper.release());
+        std::auto_ptr<BoolExpression> b(new BetweenExpression(e1.release(), lower.release(), upper.release()));
+        return negated ? new UnaryBooleanExpression(&notOp, b.release()) : b.release();
     }
     case T_IN: {
         if ( tokeniser.nextToken().type!=T_LPAREN ) {
@@ -822,7 +875,8 @@ BoolExpression* specialComparisons(Tokeniser& tokeniser, std::auto_ptr<Expressio
             error = "missing ',' or ')' after IN";
             return 0;
         }
-        return new InExpression(e1.release(), list);
+        if (negated) return new NotInExpression(e1.release(), list);
+        else return new InExpression(e1.release(), list);
     }
     default:
         error = "expected LIKE, IN or BETWEEN";
@@ -858,9 +912,7 @@ Expression* comparisonExpression(Tokeniser& tokeniser)
                 return 0;
         }
     case T_NOT: {
-        std::auto_ptr<BoolExpression> e(specialComparisons(tokeniser, e1));
-        if (!e.get()) return 0;
-        return new UnaryBooleanExpression(&notOp, e.release());
+        return specialComparisons(tokeniser, e1, true);
     }
     case T_BETWEEN:
     case T_LIKE:
@@ -960,9 +1012,17 @@ Expression* unaryArithExpression(Tokeniser& tokeniser)
     case T_PLUS:
         break; // Unary + is no op
     case T_MINUS: {
-        std::auto_ptr<Expression> e(unaryArithExpression(tokeniser));
-        if (!e.get()) return 0;
-        return new UnaryArithExpression(&negate, e.release());
+        const Token t = tokeniser.nextToken();
+        // Special case for negative numerics
+        if (t.type==T_NUMERIC_EXACT) {
+            std::auto_ptr<Expression> e(parseExactNumeric(t, true));
+            return e.release();
+        } else {
+            tokeniser.returnTokens();
+            std::auto_ptr<Expression> e(unaryArithExpression(tokeniser));
+            if (!e.get()) return 0;
+            return new UnaryArithExpression(&negate, e.release());
+        }
     }
     default:
         tokeniser.returnTokens();
@@ -973,7 +1033,45 @@ Expression* unaryArithExpression(Tokeniser& tokeniser)
     return e.release();
 }
 
-Expression* primaryExpression(Tokeniser& tokeniser)
+Expression* parseExactNumeric(const Token& token, bool negate)
+{
+    int base = 0;
+    string s;
+    std::remove_copy(token.val.begin(), token.val.end(), std::back_inserter(s), '_');
+    if (s[1]=='b' || s[1]=='B') {
+        base = 2;
+        s = s.substr(2);
+    } else if (s[1]=='x' || s[1]=='X') {
+        base = 16;
+        s = s.substr(2);
+    } if (s[0]=='0') {
+        base = 8;
+    }
+    errno = 0;
+    uint64_t value = strtoull(s.c_str(), 0, base);
+    if (!errno && (base || value<=INT64_MAX)) {
+        int64_t r = value;
+        return new Literal((negate ? -r : r));
+    }
+    if (negate && value==INT64_MAX+1ull) return new Literal(INT64_MIN);
+    error = "integer literal too big";
+    return 0;
+}
+
+Expression* parseApproxNumeric(const Token& token)
+{
+    errno = 0;
+    string s;
+    std::remove_copy(token.val.begin(), token.val.end(), std::back_inserter(s), '_');
+    double value = std::strtod(s.c_str(), 0);
+    if (!errno) return new Literal(value);
+    error = "floating literal overflow/underflow";
+    return 0;
+}
+
+Expression* primaryExpression(Tokeniser& tokeniser
+  
+)
 {
     const Token& t = tokeniser.nextToken();
     switch (t.type) {
@@ -986,9 +1084,9 @@ Expression* primaryExpression(Tokeniser& tokeniser)
         case T_TRUE:
             return new Literal(true);
         case T_NUMERIC_EXACT:
-            return new Literal(boost::lexical_cast<int64_t>(t.val));
+            return parseExactNumeric(t, false);
         case T_NUMERIC_APPROX:
-            return new Literal(boost::lexical_cast<double>(t.val));
+            return parseApproxNumeric(t);
         default:
             error = "expected literal or identifier";
             return 0;
