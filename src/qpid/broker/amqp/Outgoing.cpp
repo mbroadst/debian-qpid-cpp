@@ -18,6 +18,7 @@
  * under the License.
  *
  */
+#include "qpid/broker/amqp/DataReader.h"
 #include "qpid/broker/amqp/Outgoing.h"
 #include "qpid/broker/amqp/Exception.h"
 #include "qpid/broker/amqp/Header.h"
@@ -69,7 +70,8 @@ OutgoingFromQueue::OutgoingFromQueue(Broker& broker, const std::string& source, 
       buffer(1024)/*used only for header at present*/,
       //for exclusive queues, assume unreliable unless reliable is explicitly requested; otherwise assume reliable unless unreliable requested
       unreliable(exclusive ? !requested_reliable(link) : requested_unreliable(link)),
-      cancelled(false)
+      cancelled(false),
+      trackingUndeliverableMessages(false)
 {
     for (size_t i = 0 ; i < deliveries.capacity(); ++i) {
         deliveries[i].init(i);
@@ -107,11 +109,24 @@ void OutgoingFromQueue::write(const char* data, size_t size)
     pn_link_send(link, data, size);
 }
 
+void OutgoingFromQueue::mergeMessageAnnotationsIfRequired(const Record &r)
+{
+    pn_data_t *remoteAnnotationsRaw =
+      pn_disposition_annotations(pn_delivery_remote(r.delivery));
+    if (remoteAnnotationsRaw == 0) {
+      return;
+    }
+
+    qpid::types::Variant::Map remoteMessageAnnotations;
+    DataReader::read(remoteAnnotationsRaw, remoteMessageAnnotations);
+    queue->mergeMessageAnnotations(r.cursor, remoteMessageAnnotations);
+}
+
 void OutgoingFromQueue::handle(pn_delivery_t* delivery)
 {
     size_t i = Record::getIndex(pn_delivery_tag(delivery));
     Record& r = deliveries[i];
-    if (pn_delivery_updated(delivery)) {
+    if (r.delivery && pn_delivery_updated(delivery)) {
         assert(r.delivery == delivery);
         r.disposition = pn_delivery_remote_state(delivery);
 
@@ -140,13 +155,19 @@ void OutgoingFromQueue::handle(pn_delivery_t* delivery)
                 break;
               case PN_MODIFIED:
                 if (preAcquires()) {
-                    //TODO: handle message-annotations
+                    mergeMessageAnnotationsIfRequired(r);
                     if (pn_disposition_is_undeliverable(pn_delivery_remote(delivery))) {
-                        //treat undeliverable here as rejection
-                        queue->reject(r.cursor);
-                    } else {
-                        queue->release(r.cursor, pn_disposition_is_failed(pn_delivery_remote(delivery)));
+                        if (!trackingUndeliverableMessages) {
+                            // observe queue for changes to track undeliverable messages
+                            queue->getObservers().add(
+                              boost::dynamic_pointer_cast<OutgoingFromQueue>(shared_from_this()));
+                            trackingUndeliverableMessages = true;
+                        }
+
+                        undeliverableMessages.add(r.msg.getSequence());
                     }
+
+                    queue->release(r.cursor, pn_disposition_is_failed(pn_delivery_remote(delivery)));
                 }
                 outgoingMessageRejected();//TODO: not quite true...
                 break;
@@ -168,6 +189,13 @@ bool OutgoingFromQueue::canDeliver()
 void OutgoingFromQueue::detached(bool closed)
 {
     QPID_LOG(debug, "Detaching outgoing link " << getName() << " from " << queue->getName());
+
+    if (trackingUndeliverableMessages) {
+      // stop observation of the queue
+      queue->getObservers().remove(
+        boost::dynamic_pointer_cast<OutgoingFromQueue>(shared_from_this()));
+    }
+
     queue->cancel(shared_from_this());
     //TODO: release in a clearer order?
     for (size_t i = 0 ; i < deliveries.capacity(); ++i) {
@@ -279,6 +307,7 @@ bool match(const std::string& filter, const std::string& target)
 
 bool OutgoingFromQueue::filter(const qpid::broker::Message& m)
 {
+    if (undeliverableMessages.contains(m.getSequence())) return false;
     return (subjectFilter.empty() || subjectFilter == m.getRoutingKey() || match(subjectFilter, m.getRoutingKey()))
            && (!selector || selector->filter(m));
 }
@@ -334,5 +363,11 @@ boost::shared_ptr<Queue> OutgoingFromQueue::getExclusiveSubscriptionQueue(Outgoi
     else return boost::shared_ptr<Queue>();
 }
 
+void OutgoingFromQueue::dequeued(const qpid::broker::Message &m)
+{
+    if (undeliverableMessages.contains(m.getSequence())) {
+        undeliverableMessages.remove(m.getSequence());
+    }
+}
 
 }}} // namespace qpid::broker::amqp

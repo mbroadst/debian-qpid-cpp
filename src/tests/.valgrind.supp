@@ -177,3 +177,66 @@
    fun:(below main)
 }
 
+{
+   Leak reported in acl_tests
+   Memcheck:Cond
+   fun:_ZN4qpid3acl9AclReader16loadDecisionData*
+   fun:_ZN4qpid3acl9AclReader4read*
+   fun:_ZN4qpid3acl3Acl11readAclFile*
+   ...
+}
+
+{
+   Leak reported in acl_tests and queue_redirect_tests
+   Memcheck:Leak
+   fun:_Znwm
+   ...
+   fun:_ZN4qpid6broker14QueueFlowLimit11createLimit*
+   ...
+}
+
+{
+   Leak reported in python_tests
+   Memcheck:Leak
+   fun:_Znwm
+   ...
+   fun:_M_get_node
+   fun:_M_create_node
+   ...
+}
+
+{
+   Leak reported in python_tests
+   Memcheck:Leak
+   fun:_Znwm
+   fun:_ZN4qpid6broker5Queue18scheduleAutoDeleteEb
+   ...
+}
+
+{
+   Leak reported in linearstore_python_tests
+   Memcheck:Leak
+   fun:_Znwm
+   fun:_ZN4qpid11linearstore7journal20EmptyFilePoolManager15insertPartition*
+   fun:_ZN4qpid11linearstore7journal20EmptyFilePoolManager17findEfpPartitionsEv
+   ...
+}
+
+{
+   Leak reported in acl_tests and python_tests
+   Memcheck:Leak
+   fun:_Znwm
+   ...
+   fun:_ZN4qpid6broker12QueueFactory6create*
+   fun:_ZN4qpid6broker13QueueRegistry7declare*
+   fun:_ZN4qpid6broker6Broker11createQueue*
+   ...
+}
+
+{
+   Leak reported in acl_tests
+   Memcheck:Leak
+   fun:_Znwm
+   fun:_ZNSs4_Rep9_S_createEmmRKSaIcE
+   ...
+}

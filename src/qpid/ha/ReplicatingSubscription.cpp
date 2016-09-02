@@ -157,8 +157,6 @@ void ReplicatingSubscription::initialize() {
                      << ", backup (keep " << skipEnqueue << ", drop " << initDequeues << ")");
             checkReady(l);
         }
-
-        if (primary) primary->addReplica(*this);
         Mutex::ScopedLock l(lock); // Note dequeued() can be called concurrently.
         // Send initial dequeues to the backup.
         // There must be a shared_ptr(this) when sending.
@@ -270,10 +268,11 @@ void ReplicatingSubscription::acknowledged(const broker::DeliveryRecord& r) {
 // Called with lock held. Called in subscription's connection thread.
 void ReplicatingSubscription::sendDequeueEvent(Mutex::ScopedLock& l)
 {
-    ReplicationIdSet oldDequeues = dequeues;
     if (dequeues.empty()) return;
     QPID_LOG(trace, logPrefix << "Sending dequeues " << dequeues);
-    sendEvent(DequeueEvent(dequeues), l);
+    DequeueEvent d(dequeues);
+    dequeues.clear();
+    sendEvent(d, l);
 }
 
 // Called after the message has been removed

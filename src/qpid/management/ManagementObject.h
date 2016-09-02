@@ -23,21 +23,20 @@
  */
 #include "qpid/CommonImportExport.h"
 
+#include "qpid/management/Args.h"
 #include "qpid/management/Mutex.h"
 #include "qpid/types/Variant.h"
 #include <map>
 #include <vector>
 
-#ifdef _IN_QPID_BROKER
 #include <boost/shared_ptr.hpp>
-#endif
 
 namespace qpid {
 namespace management {
 
-class Manageable;
 class ObjectId;
 class ManagementObject;
+class Manageable;
 
 
 class AgentAttachment {
@@ -137,6 +136,21 @@ public:
 class QPID_COMMON_CLASS_EXTERN ManagementObject : public ManagementItem
 {
 protected:
+    // Thread safe wrapper for Manageable* with atomic calls and destroy().
+    class QPID_COMMON_CLASS_EXTERN ManageablePtr {
+        Manageable* ptr;
+        mutable Mutex lock;
+        Manageable* get() const;
+        ManageablePtr(const ManageablePtr&); // not copyable
+        ManageablePtr& operator=(const ManageablePtr&); // not copyable
+
+      public:
+        ManageablePtr(Manageable* m) : ptr(m) {}
+
+        QPID_COMMON_EXTERN uint32_t ManagementMethod(uint32_t methodId, Args& args, std::string& text);
+        QPID_COMMON_EXTERN bool AuthorizeMethod(uint32_t methodId, Args& args, const std::string& userId);
+        void reset();
+    };
 
     uint64_t         createTime;
     uint64_t         destroyTime;
@@ -145,7 +159,7 @@ protected:
     mutable bool     configChanged;
     mutable bool     instChanged;
     bool             deleted;
-    Manageable*      coreObject;
+    ManageablePtr    manageable;
     mutable Mutex    accessLock;
     uint32_t         flags;
 
@@ -158,9 +172,7 @@ protected:
     QPID_COMMON_EXTERN uint32_t writeTimestampsSize() const;
 
   public:
-#ifdef _IN_QPID_BROKER
     typedef boost::shared_ptr<ManagementObject> shared_ptr;
-#endif
 
     QPID_COMMON_EXTERN static const uint8_t MD5_LEN = 16;
     QPID_COMMON_EXTERN static int maxThreads;
@@ -234,10 +246,8 @@ protected:
     //QPID_COMMON_EXTERN void mapDecode(const types::Variant::Map& map);
 };
 
-#ifdef _IN_QPID_BROKER
 typedef std::map<ObjectId, ManagementObject::shared_ptr> ManagementObjectMap;
 typedef std::vector<ManagementObject::shared_ptr> ManagementObjectVector;
-#endif
 
 }}
 

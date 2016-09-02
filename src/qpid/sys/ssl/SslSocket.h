@@ -67,7 +67,8 @@ public:
     void close() const;
 
     int getKeyLen() const;
-    std::string getClientAuthId() const;
+    std::string getPeerAuthId() const;
+    std::string getLocalAuthId() const;
 
 protected:
     mutable PRFileDesc* nssSocket;

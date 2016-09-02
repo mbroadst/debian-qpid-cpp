@@ -22,7 +22,7 @@
 find_package(Proton 0.7)
 
 set (amqp_default ${amqp_force})
-set (maximum_version 0.9)
+set (maximum_version 0.14)
 if (Proton_FOUND)
     if (Proton_VERSION VERSION_GREATER ${maximum_version})
         message(WARNING "Qpid proton ${Proton_VERSION} is not a tested version and might not be compatible, ${maximum_version} is highest tested; build may not work")
@@ -106,8 +106,7 @@ if (BUILD_AMQP)
     add_library (amqp MODULE ${amqp_SOURCES})
     target_link_libraries (amqp qpidtypes qpidbroker qpidcommon ${Proton_LIBRARIES})
     set_target_properties (amqp PROPERTIES
-                           PREFIX ""
-                           COMPILE_DEFINITIONS _IN_QPID_BROKER)
+                           PREFIX "")
 
     install (TARGETS amqp
              DESTINATION ${QPIDD_MODULE_DIR}

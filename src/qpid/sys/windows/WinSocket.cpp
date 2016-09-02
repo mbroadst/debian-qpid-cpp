@@ -273,9 +273,14 @@ int WinSocket::getKeyLen() const
     return 0;
 }
 
-std::string WinSocket::getClientAuthId() const
+std::string WinSocket::getPeerAuthId() const
 {
     return std::string();
+}
+
+std::string WinSocket::getLocalAuthId() const
+{
+    return "dummy";
 }
 
 }} // namespace qpid::sys

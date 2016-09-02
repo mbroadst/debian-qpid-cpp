@@ -1,3 +1,9 @@
+qpid-cpp (1.35-0qpid+trusty1) trusty; urgency=medium
+
+  * Rebased on 1.35.0
+
+ -- Matt Braodstone <mbroadst@gmail.com>  Thu, 01 Sep 2016 19:33:05 -0400
+
 qpid-cpp (0.35-1trusty+hio1) trusty; urgency=medium
 
   * update to qpid trunk for a prerelease 0.35
