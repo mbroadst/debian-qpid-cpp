@@ -44,14 +44,28 @@ template<> struct UintType<4> { typedef uint32_t Type; };
 template<> struct UintType<8> { typedef uint64_t Type; };
 
 template<int W> struct FloatType{};
-template<> struct FloatType<1> { typedef int8_t Type; }; // Dummy, never used.
-template<> struct FloatType<2> { typedef int16_t Type; }; // Dummy, never used.
 template<> struct FloatType<4> { typedef float Type; };
 template<> struct FloatType<8> { typedef double Type; };
 
+// Stolen from C++11
+template <bool, class T=void> struct enable_if {};
+template <class T> struct enable_if<true, T> { typedef T type; };
+
 // Construct the right subclass of FixedWidthValue for numeric types using width and kind.
 // Kind 1=int, 2=unsigned int, 3=float
-template<int W> FixedWidthValue<W>* numericFixedWidthValue(uint8_t kind) {
+template<int W>
+typename enable_if<(W<3), FixedWidthValue<W>*>::type
+numericFixedWidthValue(uint8_t kind) {
+    switch (kind) {
+      case 1: return new FixedWidthIntValue<typename IntType<W>::Type>();
+      case 2: return new FixedWidthIntValue<typename UintType<W>::Type>();
+      default: return new FixedWidthValue<W>();
+    }
+}
+
+template<int W>
+typename enable_if<(W>=3), FixedWidthValue<W>*>::type
+numericFixedWidthValue(uint8_t kind) {
     switch (kind) {
       case 1: return new FixedWidthIntValue<typename IntType<W>::Type>();
       case 2: return new FixedWidthIntValue<typename UintType<W>::Type>();

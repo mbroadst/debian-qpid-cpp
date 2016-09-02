@@ -24,7 +24,6 @@
 #include "QueueGuard.h"
 #include "QueueSnapshot.h"
 #include "ReplicatingSubscription.h"
-#include "TxReplicatingSubscription.h"
 #include "Primary.h"
 #include "HaBroker.h"
 #include "qpid/assert.h"
@@ -52,7 +51,6 @@ const string ReplicatingSubscription::QPID_REPLICATING_SUBSCRIPTION(QPID_HA+"rep
 const string ReplicatingSubscription::QPID_BROKER_INFO(QPID_HA+"info");
 const string ReplicatingSubscription::QPID_ID_SET(QPID_HA+"ids");
 const string ReplicatingSubscription::QPID_QUEUE_REPLICATOR(QPID_HA+"qrep");
-const string ReplicatingSubscription::QPID_TX_REPLICATOR(QPID_HA+"txrep");
 
 /* Called by SemanticState::consume to create a consumer */
 boost::shared_ptr<broker::SemanticState::ConsumerImpl>
@@ -72,12 +70,6 @@ ReplicatingSubscription::Factory::create(
     std::string type = arguments.getAsString(QPID_REPLICATING_SUBSCRIPTION);
     if (type == QPID_QUEUE_REPLICATOR) {
         rs.reset(new ReplicatingSubscription(
-                     haBroker,
-                     parent, name, queue, ack, acquire, exclusive, tag,
-                     resumeId, resumeTtl, arguments));
-    }
-    else if (type == QPID_TX_REPLICATOR) {
-        rs.reset(new TxReplicatingSubscription(
                      haBroker,
                      parent, name, queue, ack, acquire, exclusive, tag,
                      resumeId, resumeTtl, arguments));
@@ -165,8 +157,6 @@ void ReplicatingSubscription::initialize() {
                      << ", backup (keep " << skipEnqueue << ", drop " << initDequeues << ")");
             checkReady(l);
         }
-
-        if (primary) primary->addReplica(*this);
         Mutex::ScopedLock l(lock); // Note dequeued() can be called concurrently.
         // Send initial dequeues to the backup.
         // There must be a shared_ptr(this) when sending.
@@ -254,7 +244,6 @@ void ReplicatingSubscription::cancel()
         cancelled = true;
     }
     QPID_LOG(debug, logPrefix << "Cancelled");
-    if (primary) primary->removeReplica(*this);
     getQueue()->getObservers().remove(
         boost::dynamic_pointer_cast<ReplicatingSubscription>(shared_from_this()));
     guard->cancel();
@@ -279,12 +268,11 @@ void ReplicatingSubscription::acknowledged(const broker::DeliveryRecord& r) {
 // Called with lock held. Called in subscription's connection thread.
 void ReplicatingSubscription::sendDequeueEvent(Mutex::ScopedLock& l)
 {
-    ReplicationIdSet oldDequeues = dequeues;
-    dequeues -= skipDequeue;    // Don't send skipped dequeues
-    skipDequeue -= oldDequeues; // Forget dequeues that would have been sent.
     if (dequeues.empty()) return;
     QPID_LOG(trace, logPrefix << "Sending dequeues " << dequeues);
-    sendEvent(DequeueEvent(dequeues), l);
+    DequeueEvent d(dequeues);
+    dequeues.clear();
+    sendEvent(d, l);
 }
 
 // Called after the message has been removed
@@ -331,16 +319,6 @@ bool ReplicatingSubscription::doDispatch()
         QPID_LOG(warning, logPrefix << " exception in dispatch: " << e.what());
         return false;
     }
-}
-
-void ReplicatingSubscription::skipEnqueues(const ReplicationIdSet& ids) {
-    Mutex::ScopedLock l(lock);
-    skipEnqueue += ids;
-}
-
-void ReplicatingSubscription::skipDequeues(const ReplicationIdSet& ids) {
-    Mutex::ScopedLock l(lock);
-    skipDequeue += ids;
 }
 
 }} // namespace qpid::ha

@@ -133,7 +133,6 @@ BrokerOptions::BrokerOptions(const std::string& name) :
     queueCleanInterval(60*sys::TIME_SEC*10),//10 minutes
     auth(SaslAuthenticator::available()),
     realm("QPID"),
-    saslServiceName(BROKER_SASL_NAME),
     replayFlushLimit(0),
     replayHardLimit(0),
     queueLimit(100*1048576/*100M default limit*/),
@@ -252,6 +251,8 @@ Broker::Broker(const BrokerOptions& conf) :
     if (!dataDir.isEnabled()) {
         QPID_LOG (info, "No data directory - Disabling persistent configuration");
     }
+    System* system = new System (dataDir.isEnabled() ? dataDir.getPath() : string(), this);
+    systemObject = System::shared_ptr(system);
     try {
     if (conf.enableMgmt) {
         QPID_LOG(info, "Management enabled");
@@ -259,9 +260,6 @@ Broker::Broker(const BrokerOptions& conf) :
                                    conf.mgmtPubInterval/sys::TIME_SEC, this, conf.workerThreads + 3);
         managementAgent->setName("apache.org", "qpidd");
         _qmf::Package packageInitializer(managementAgent.get());
-
-        System* system = new System (dataDir.isEnabled() ? dataDir.getPath() : string(), this);
-        systemObject = System::shared_ptr(system);
 
         mgmtObject = _qmf::Broker::shared_ptr(new _qmf::Broker(managementAgent.get(), this, system, "amqp-broker"));
         mgmtObject->set_systemRef(system->GetManagementObject()->getObjectId());
@@ -1498,7 +1496,6 @@ void Broker::deleteQueue(const std::string& name, const std::string& userId,
                                  queue->isRedirectSource() ? peerQ : queue,
                                  false);
         queues.destroy(name, connectionId, userId);
-        queue->destroyed();
     } else {
         throw framing::NotFoundException(QPID_MSG("Delete failed. No such queue: " << name));
     }

@@ -64,6 +64,19 @@ std::string Message::getRoutingKey() const
     return getEncoding().getRoutingKey();
 }
 
+std::string Message::getTo() const
+{
+    return getEncoding().getTo();
+}
+std::string Message::getSubject() const
+{
+    return getEncoding().getSubject();
+}
+std::string Message::getReplyTo() const
+{
+    return getEncoding().getReplyTo();
+}
+
 bool Message::isPersistent() const
 {
     return getEncoding().isPersistent();
@@ -286,6 +299,11 @@ qpid::types::Variant Message::getProperty(const std::string& key) const
     PropertyRetriever r(key);
     sharedState->processProperties(r);
     return r.getResult();
+}
+
+std::string Message::printProperties() const
+{
+    return sharedState->printProperties();
 }
 
 boost::intrusive_ptr<PersistableMessage> Message::getPersistentContext() const

@@ -59,10 +59,6 @@ qpid::framing::ReplyTo translate(const std::string address, Broker* broker)
         return qpid::framing::ReplyTo(i > 0 ? address.substr(0, i) : EMPTY, (i+1) < address.size() ? address.substr(i+1) : EMPTY);
     }
 }
-qpid::framing::ReplyTo translate(const qpid::amqp::CharSequence& address, Broker* broker)
-{
-    return translate(std::string(address.data, address.size), broker);
-}
 std::string translate(const qpid::framing::ReplyTo r)
 {
     if (r.getExchange().size()) {
@@ -245,7 +241,7 @@ boost::intrusive_ptr<const qpid::broker::amqp_0_10::MessageTransfer> Translation
                 props->setCorrelationId(boost::lexical_cast<std::string>(cid.value.ulong));
                 break;
             }
-            if (message->getReplyTo()) props->setReplyTo(translate(message->getReplyTo(), broker));
+            if (message->getReplyToAsCharSequence()) props->setReplyTo(translate(message->getReplyTo(), broker));
             if (message->getContentType()) props->setContentType(translate(message->getContentType()));
             if (message->getContentEncoding()) props->setContentEncoding(translate(message->getContentEncoding()));
             props->setUserId(message->getUserId());

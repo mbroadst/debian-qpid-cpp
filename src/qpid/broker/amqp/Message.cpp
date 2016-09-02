@@ -62,9 +62,8 @@ std::string Message::getUserId() const
 
 uint64_t Message::getTimestamp() const
 {
-    //AMQP 1.0 message doesn't have the equivalent of the 0-10 timestamp field
-    //TODO: define an annotation for that
-    return 0;
+    //creation time is in milliseconds, timestamp (from the 0-10 spec) is in seconds
+    return !creationTime ? 0 : creationTime.get()/1000;
 }
 
 bool Message::isPersistent() const
@@ -85,6 +84,25 @@ uint8_t Message::getPriority() const
 {
     if (!priority) return 4;
     else return priority.get();
+}
+
+std::string Message::getTo() const
+{
+    std::string v;
+    if (to.data) v.assign(to.data, to.size);
+    return v;
+}
+std::string Message::getSubject() const
+{
+    std::string v;
+    if (subject.data) v.assign(subject.data, subject.size);
+    return v;
+}
+std::string Message::getReplyTo() const
+{
+    std::string v;
+    if (replyTo.data) v.assign(replyTo.data, replyTo.size);
+    return v;
 }
 
 namespace {
@@ -131,6 +149,85 @@ std::string Message::getPropertyAsString(const std::string& key) const
     StringRetriever sr(key);
     processProperties(sr);
     return sr.getValue();
+}
+
+namespace {
+class PropertyPrinter : public MapHandler
+{
+  public:
+    std::stringstream out;
+
+    PropertyPrinter() : first(true) {}
+    void handleVoid(const CharSequence&) {}
+    void handleBool(const CharSequence& key, bool value) { handle(key, value); }
+    void handleUint8(const CharSequence& key, uint8_t value) { handle(key, value); }
+    void handleUint16(const CharSequence& key, uint16_t value) { handle(key, value); }
+    void handleUint32(const CharSequence& key, uint32_t value) { handle(key, value); }
+    void handleUint64(const CharSequence& key, uint64_t value) { handle(key, value); }
+    void handleInt8(const CharSequence& key, int8_t value) { handle(key, value); }
+    void handleInt16(const CharSequence& key, int16_t value) { handle(key, value); }
+    void handleInt32(const CharSequence& key, int32_t value) { handle(key, value); }
+    void handleInt64(const CharSequence& key, int64_t value) { handle(key, value); }
+    void handleFloat(const CharSequence& key, float value) { handle(key, value); }
+    void handleDouble(const CharSequence& key, double value) { handle(key, value); }
+    void handleString(const CharSequence& key, const CharSequence& value, const CharSequence& /*encoding*/)
+    {
+        handle(key, value.str());
+    }
+    std::string str() { return out.str(); }
+    bool print(const std::string& key, const std::string& value, bool prependComma) {
+        if (prependComma) out << ", ";
+        if (!value.empty()) {
+            out << key << "=" << value;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    template <typename T> bool print_(const std::string& key, T value, bool prependComma) {
+        if (prependComma) out << ", ";
+        if (value) {
+            out << key << "=" << value;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+  private:
+    bool first;
+
+    template <typename T> void handle(const CharSequence& key, T value)
+    {
+        if (first) {
+            first = false;
+        } else {
+            out << ", ";
+        }
+        out << key.str() << "=" << value;
+    }
+};
+}
+
+std::string Message::printProperties() const
+{
+    PropertyPrinter r;
+    bool comma = false;
+    comma = r.print("subject", getSubject(), comma);
+    comma = r.print("message-id", getMessageId().str(), comma);
+    comma = r.print("correlation-id", getCorrelationId().str(), comma);
+    comma = r.print("user-id", getUserId(), comma);
+    comma = r.print("to", getTo(), comma);
+    comma = r.print("reply-to", getReplyTo(), comma);
+    comma = r.print_("priority", (uint32_t) getPriority(), comma);
+    comma = r.print_("durable", isPersistent(), comma);
+    uint64_t ttl(0);
+    getTtl(ttl);
+    comma = r.print_("ttl", ttl, comma);
+    r.out << ", application-properties={";
+    processProperties(r);
+    r.out << "}";
+    return r.str();
 }
 
 namespace {
@@ -242,7 +339,7 @@ qpid::amqp::MessageId Message::getMessageId() const
 {
     return messageId;
 }
-qpid::amqp::CharSequence Message::getReplyTo() const
+qpid::amqp::CharSequence Message::getReplyToAsCharSequence() const
 {
     return replyTo;
 }
@@ -318,7 +415,7 @@ void Message::onCorrelationId(const qpid::amqp::CharSequence& v, qpid::types::Va
 void Message::onContentType(const qpid::amqp::CharSequence& v) { contentType = v; }
 void Message::onContentEncoding(const qpid::amqp::CharSequence& v) { contentEncoding = v; }
 void Message::onAbsoluteExpiryTime(int64_t) {}
-void Message::onCreationTime(int64_t) {}
+void Message::onCreationTime(int64_t v) { creationTime = v; }
 void Message::onGroupId(const qpid::amqp::CharSequence&) {}
 void Message::onGroupSequence(uint32_t) {}
 void Message::onReplyToGroupId(const qpid::amqp::CharSequence&) {}
